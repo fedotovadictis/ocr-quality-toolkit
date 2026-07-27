@@ -1,0 +1,19 @@
+# Binaries
+bin/
+
+# Build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Coverage
+*.out
+coverage.out
+
+# IDE
+.idea/
