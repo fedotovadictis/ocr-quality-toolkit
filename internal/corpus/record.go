@@ -1,6 +1,6 @@
 package corpus
 
-// Record описывает одно изображение OCR-корпуса
+// Record describes a single image in the OCR corpus
 type Record struct {
 	ID         string   `json:"id"`
 	Image      string   `json:"image"`
