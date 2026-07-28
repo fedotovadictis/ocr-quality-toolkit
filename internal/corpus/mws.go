@@ -5,7 +5,7 @@ import (
 	"ocr-quality-toolkit/internal/imageinfo"
 	"os"
 	"path/filepath"
-	"strings"
+	"sort"
 )
 
 type mwsRecord struct {
@@ -37,25 +37,19 @@ func ImportMWSMetadata(path string) ([]Record, ImportStats, error) {
 		TotalLines: len(rows),
 	}
 
-	var result []Record
+	recordsByImage := make(map[string]*Record)
 	for _, row := range rows {
 		if row.Type != "full-page OCR ru" {
 			continue
 		}
 		stats.MatchingTasks++
 
-		var reference string
-
-		for _, answer := range row.Answers {
-			if strings.TrimSpace(answer) != "" {
-				reference = answer
-				break
-			}
-		}
-		if reference == "" {
+		references := nonEmptyUniqueStrings(row.Answers)
+		if len(references) == 0 {
 			stats.EmptyReferences++
 			continue
 		}
+
 		imagePath := filepath.Join(datasetDir, row.FileName)
 
 		info, err := os.Stat(imagePath)
@@ -82,21 +76,40 @@ func ImportMWSMetadata(path string) ([]Record, ImportStats, error) {
 			continue
 		}
 
-		record := Record{
-			ID:         row.ID,
-			Image:      row.FileName,
-			References: []string{reference},
+		normalizedImagePath := filepath.ToSlash(filepath.Clean(row.FileName))
+
+		if existing, ok := recordsByImage[normalizedImagePath]; ok {
+			existing.References = appendUnique(existing.References, references...)
+			existing.Tags = appendUnique(existing.Tags, row.DatasetName)
+			continue
+		}
+
+		record := &Record{
+			ID:         makeMWSID(row.ID, normalizedImagePath),
+			Image:      normalizedImagePath,
+			References: references,
 			Language:   "ru",
 			Task:       row.Type,
 			Width:      width,
 			Height:     height,
 			Format:     format,
-			Tags:       []string{},
+			Tags:       appendUnique(nil, row.DatasetName),
 			SHA256:     sha,
 		}
 
-		result = append(result, record)
+		recordsByImage[normalizedImagePath] = record
 		stats.Imported++
+	}
+	result := make([]Record, 0, len(recordsByImage))
+
+	for _, record := range recordsByImage {
+		result = append(result, *record)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
+	for i := range result {
+		sort.Strings(result[i].Tags)
 	}
 	return result, stats, nil
 }
