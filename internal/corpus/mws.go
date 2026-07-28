@@ -1,6 +1,12 @@
 package corpus
 
-import "strings"
+import (
+	"ocr-quality-toolkit/internal/hash"
+	"ocr-quality-toolkit/internal/imageinfo"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 type mwsRecord struct {
 	FileName    string   `json:"file_name"`
@@ -15,10 +21,13 @@ type ImportStats struct {
 	MatchingTasks   int
 	Imported        int
 	MissingImages   int
+	InvalidImages   int
 	EmptyReferences int
 }
 
-func ImportMWSMetadata(path string) ([]mwsRecord, ImportStats, error) {
+func ImportMWSMetadata(path string) ([]Record, ImportStats, error) {
+
+	datasetDir := filepath.Dir(path)
 	rows, err := ReadJSONL[mwsRecord](path)
 	if err != nil {
 		return nil, ImportStats{}, err
@@ -28,12 +37,12 @@ func ImportMWSMetadata(path string) ([]mwsRecord, ImportStats, error) {
 		TotalLines: len(rows),
 	}
 
-	var result []mwsRecord
+	var result []Record
 	for _, row := range rows {
 		if row.Type != "full-page OCR ru" {
 			continue
 		}
-		stats.MatchingTasks += 1
+		stats.MatchingTasks++
 
 		var reference string
 
@@ -44,10 +53,50 @@ func ImportMWSMetadata(path string) ([]mwsRecord, ImportStats, error) {
 			}
 		}
 		if reference == "" {
-			stats.EmptyReferences += 1
+			stats.EmptyReferences++
 			continue
 		}
-		result = append(result, row)
+		imagePath := filepath.Join(datasetDir, row.FileName)
+
+		info, err := os.Stat(imagePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				stats.MissingImages++
+				continue
+			}
+			return nil, stats, err
+		}
+		if info.IsDir() {
+			stats.MissingImages++
+			continue
+		}
+		format, width, height, err := imageinfo.Read(imagePath)
+		if err != nil {
+			stats.InvalidImages++
+			continue
+		}
+
+		sha, err := hash.FileSHA256(imagePath)
+		if err != nil {
+			stats.InvalidImages++
+			continue
+		}
+
+		record := Record{
+			ID:         row.ID,
+			Image:      row.FileName,
+			References: []string{reference},
+			Language:   "ru",
+			Task:       row.Type,
+			Width:      width,
+			Height:     height,
+			Format:     format,
+			Tags:       []string{},
+			SHA256:     sha,
+		}
+
+		result = append(result, record)
+		stats.Imported++
 	}
 	return result, stats, nil
 }
