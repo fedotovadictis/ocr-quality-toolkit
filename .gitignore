@@ -17,3 +17,6 @@ coverage.out
 
 # IDE
 .idea/
+# Downloaded MWS-Vision-Bench dataset
+/testdata/mws/
+/manifest.jsonl
