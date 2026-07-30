@@ -75,7 +75,7 @@ func Align(reference, hypothesis []string) Alignment {
 	j := len(hypothesis)
 
 	for i > 0 || j > 0 {
-		// Приоритет 1: совпадение.
+		//совпадение
 		if i > 0 &&
 			j > 0 &&
 			reference[i-1] == hypothesis[j-1] &&
@@ -93,7 +93,7 @@ func Align(reference, hypothesis []string) Alignment {
 			continue
 		}
 
-		// Приоритет 2: замена.
+		//  замена
 		if i > 0 &&
 			j > 0 &&
 			matrix[i][j] == matrix[i-1][j-1]+1 {
@@ -110,7 +110,7 @@ func Align(reference, hypothesis []string) Alignment {
 			continue
 		}
 
-		// Приоритет 3: удаление.
+		// удаление
 		if i > 0 &&
 			matrix[i][j] == matrix[i-1][j]+1 {
 
@@ -124,7 +124,7 @@ func Align(reference, hypothesis []string) Alignment {
 			continue
 		}
 
-		// Приоритет 4: вставка.
+		// вставка
 		result.Operations = append(result.Operations, Operation{
 			Type:       OperationInsert,
 			Hypothesis: hypothesis[j-1],

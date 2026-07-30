@@ -118,6 +118,36 @@ func TestAlign(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:       "cyrillic substitution",
+			reference:  []string{"с", "ч", "ё", "т"},
+			hypothesis: []string{"с", "ч", "е", "т"},
+			want: Alignment{
+				Distance:      1,
+				Hits:          3,
+				Substitutions: 1,
+				Operations: []Operation{
+					{Type: OperationEqual, Reference: "с", Hypothesis: "с"},
+					{Type: OperationEqual, Reference: "ч", Hypothesis: "ч"},
+					{Type: OperationSubstitute, Reference: "ё", Hypothesis: "е"},
+					{Type: OperationEqual, Reference: "т", Hypothesis: "т"},
+				},
+			},
+		},
+		{
+			name:       "ocr confusable characters",
+			reference:  []string{"0", "3"},
+			hypothesis: []string{"О", "З"},
+			want: Alignment{
+				Distance:      2,
+				Hits:          0,
+				Substitutions: 2,
+				Operations: []Operation{
+					{Type: OperationSubstitute, Reference: "0", Hypothesis: "О"},
+					{Type: OperationSubstitute, Reference: "3", Hypothesis: "З"},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
