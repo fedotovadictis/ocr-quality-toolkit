@@ -5,21 +5,28 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"ocr-quality-toolkit/internal/evaluate"
+	"ocr-quality-toolkit/internal/normalize"
 
 	"ocr-quality-toolkit/internal/corpus"
 )
 
 func Run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: ocrq import-mws -metadata <path> -output <path>")
+		return errors.New(
+			"usage: ocrq <import-mws|evaluate> [options]",
+		)
 	}
 
 	switch args[0] {
+	case "evaluate":
+		return runEvaluate(args[1:], stdout, stderr)
 	case "import-mws":
 		return runImportMWS(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+
 }
 
 func runImportMWS(args []string, stdout, stderr io.Writer) error {
@@ -55,6 +62,78 @@ func runImportMWS(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "missing images: %d\n", stats.MissingImages)
 	fmt.Fprintf(stdout, "invalid images: %d\n", stats.InvalidImages)
 	fmt.Fprintf(stdout, "empty references: %d\n", stats.EmptyReferences)
+
+	return nil
+}
+func runEvaluate(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("evaluate", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+
+	manifestPath := flags.String(
+		"manifest",
+		"",
+		"path to manifest JSONL",
+	)
+	hypothesesPath := flags.String(
+		"hypotheses",
+		"",
+		"path to hypotheses JSONL",
+	)
+	normalization := flags.String(
+		"normalization",
+		"",
+		"normalization profile: strict or plain-text-ru",
+	)
+	outputPath := flags.String(
+		"out",
+		"",
+		"path to output JSON report",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *manifestPath == "" {
+		return errors.New("missing required flag: -manifest")
+	}
+	if *hypothesesPath == "" {
+		return errors.New("missing required flag: -hypotheses")
+	}
+	if *normalization == "" {
+		return errors.New("missing required flag: -normalization")
+	}
+	if *outputPath == "" {
+		return errors.New("missing required flag: -out")
+	}
+
+	profile := normalize.Profile(*normalization)
+
+	records, err := corpus.ReadManifest(*manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+
+	hypotheses, err := corpus.ReadHypotheses(*hypothesesPath)
+	if err != nil {
+		return fmt.Errorf("read hypotheses: %w", err)
+	}
+
+	results, err := evaluate.Evaluate(
+		records,
+		hypotheses,
+		profile,
+	)
+	if err != nil {
+		return fmt.Errorf("evaluate: %w", err)
+	}
+
+	if err := evaluate.WriteReport(*outputPath, results); err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+
+	fmt.Fprintf(stdout, "evaluated: %d\n", len(results))
+	fmt.Fprintf(stdout, "report: %s\n", *outputPath)
 
 	return nil
 }

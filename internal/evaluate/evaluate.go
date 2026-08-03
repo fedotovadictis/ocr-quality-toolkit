@@ -8,11 +8,6 @@ import (
 	"ocr-quality-toolkit/internal/normalize"
 )
 
-type Hypothesis struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
-}
-
 type Result struct {
 	ID         string  `json:"id"`
 	CER        float64 `json:"cer"`
@@ -24,7 +19,7 @@ type Result struct {
 
 func Evaluate(
 	records []corpus.Record,
-	hypotheses []Hypothesis,
+	hypotheses []corpus.Hypothesis,
 	profile normalize.Profile,
 ) ([]Result, error) {
 	manifestIDs := make(map[string]bool, len(records))

@@ -17,7 +17,7 @@ func TestEvaluateSingleSuccess(t *testing.T) {
 		},
 	}
 
-	hypotheses := []Hypothesis{
+	hypotheses := []corpus.Hypothesis{
 		{
 			ID:   "1",
 			Text: "кот",
@@ -93,7 +93,7 @@ func TestEvaluateMissingHypothesis(t *testing.T) {
 		},
 	}
 
-	hypotheses := []Hypothesis{}
+	hypotheses := []corpus.Hypothesis{}
 
 	results, err := Evaluate(
 		manifest,
@@ -131,7 +131,7 @@ func TestEvaluateOCRError(t *testing.T) {
 		},
 	}
 
-	hypotheses := []Hypothesis{
+	hypotheses := []corpus.Hypothesis{
 		{
 			ID:   "1",
 			Text: "кит",
@@ -177,7 +177,7 @@ func TestEvaluateEmptyHypothesisText(t *testing.T) {
 		},
 	}
 
-	hypotheses := []Hypothesis{
+	hypotheses := []corpus.Hypothesis{
 		{
 			ID:   "1",
 			Text: "",
@@ -214,7 +214,7 @@ func TestEvaluateUnknownHypothesisID(t *testing.T) {
 		},
 	}
 
-	hypotheses := []Hypothesis{
+	hypotheses := []corpus.Hypothesis{
 		{
 			ID:   "999",
 			Text: "кот",
@@ -241,7 +241,7 @@ func TestEvaluateDuplicateHypothesisID(t *testing.T) {
 		},
 	}
 
-	hypotheses := []Hypothesis{
+	hypotheses := []corpus.Hypothesis{
 		{
 			ID:   "1",
 			Text: "кот",
@@ -273,7 +273,7 @@ func TestEvaluateChoosesBestReference(t *testing.T) {
 		},
 	}
 
-	hypotheses := []Hypothesis{
+	hypotheses := []corpus.Hypothesis{
 		{
 			ID:   "1",
 			Text: "кот",
