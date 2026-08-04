@@ -18,6 +18,7 @@ type PageOptions struct {
 	FontPath   string
 	FontSize   float64
 	LineHeight int
+	Seed       int64
 }
 
 func GeneratePage(

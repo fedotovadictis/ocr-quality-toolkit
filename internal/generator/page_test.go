@@ -1,8 +1,10 @@
 package generator
 
 import (
+	"bytes"
 	"image"
 	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,6 +22,7 @@ func TestGeneratePage(t *testing.T) {
 		FontPath:   fontPath,
 		FontSize:   24,
 		LineHeight: 32,
+		Seed:       42,
 	}
 
 	page, err := GeneratePage("Привет, OCR!", options)
@@ -141,4 +144,45 @@ func writeTestFont(t *testing.T) string {
 	}
 
 	return fontPath
+}
+func TestGeneratePageSameInputProducesSamePNG(t *testing.T) {
+	fontPath := writeTestFont(t)
+
+	options := PageOptions{
+		Width:      600,
+		Height:     800,
+		Margin:     40,
+		FontPath:   fontPath,
+		FontSize:   24,
+		LineHeight: 32,
+		Seed:       42,
+	}
+
+	firstPage, err := GeneratePage("Привет, OCR!", options)
+	if err != nil {
+		t.Fatalf("first GeneratePage returned error: %v", err)
+	}
+
+	secondPage, err := GeneratePage("Привет, OCR!", options)
+	if err != nil {
+		t.Fatalf("second GeneratePage returned error: %v", err)
+	}
+
+	firstPNG := encodePNG(t, firstPage)
+	secondPNG := encodePNG(t, secondPage)
+
+	if !bytes.Equal(firstPNG, secondPNG) {
+		t.Fatal("same input and seed must produce identical PNG bytes")
+	}
+}
+func encodePNG(t *testing.T, img image.Image) []byte {
+	t.Helper()
+
+	var buffer bytes.Buffer
+
+	if err := png.Encode(&buffer, img); err != nil {
+		t.Fatalf("encode PNG: %v", err)
+	}
+
+	return buffer.Bytes()
 }
