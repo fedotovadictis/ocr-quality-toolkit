@@ -11,11 +11,7 @@ import (
 )
 
 func TestGeneratePage(t *testing.T) {
-	fontPath := filepath.Join(t.TempDir(), "font.ttf")
-
-	if err := os.WriteFile(fontPath, goregular.TTF, 0o600); err != nil {
-		t.Fatalf("write test font: %v", err)
-	}
+	fontPath := writeTestFont(t)
 
 	options := PageOptions{
 		Width:      600,
@@ -69,6 +65,46 @@ func TestGeneratePageMissingFont(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+func TestGeneratePageWrapsLongText(t *testing.T) {
+	fontPath := writeTestFont(t)
+
+	options := PageOptions{
+		Width:      180,
+		Height:     300,
+		Margin:     20,
+		FontPath:   fontPath,
+		FontSize:   20,
+		LineHeight: 30,
+	}
+
+	page, err := GeneratePage(
+		"Привет мир это длинная строка для проверки переноса",
+		options,
+	)
+	if err != nil {
+		t.Fatalf("GeneratePage returned error: %v", err)
+	}
+
+	secondLineStart := options.Margin + int(options.FontSize) + 5
+	secondLineEnd := secondLineStart + options.LineHeight
+
+	foundInk := false
+
+	for y := secondLineStart; y < secondLineEnd && !foundInk; y++ {
+		for x := options.Margin; x < options.Width-options.Margin; x++ {
+			pixel := color.RGBAModel.Convert(page.At(x, y)).(color.RGBA)
+
+			if pixel != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+				foundInk = true
+				break
+			}
+		}
+	}
+
+	if !foundInk {
+		t.Fatal("expected text to be drawn on a second line")
+	}
+}
 
 func isImageWhite(img interface {
 	Bounds() image.Rectangle
@@ -94,4 +130,15 @@ func isImageWhite(img interface {
 	}
 
 	return true
+}
+func writeTestFont(t *testing.T) string {
+	t.Helper()
+
+	fontPath := filepath.Join(t.TempDir(), "font.ttf")
+
+	if err := os.WriteFile(fontPath, goregular.TTF, 0o600); err != nil {
+		t.Fatalf("write test font: %v", err)
+	}
+
+	return fontPath
 }

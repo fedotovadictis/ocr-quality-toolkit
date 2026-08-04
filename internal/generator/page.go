@@ -69,7 +69,16 @@ func GeneratePage(
 		),
 	}
 
-	drawer.DrawString(text)
+	maxWidth := options.Width - 2*options.Margin
+	lines := WrapText(text, face, maxWidth)
+
+	for i, line := range lines {
+		drawer.Dot = fixed.P(
+			options.Margin,
+			options.Margin+int(options.FontSize)+i*options.LineHeight,
+		)
+		drawer.DrawString(line)
+	}
 
 	return page, nil
 }
