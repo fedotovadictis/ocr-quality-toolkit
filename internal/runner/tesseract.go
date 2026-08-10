@@ -57,10 +57,18 @@ func (r *TesseractRunner) Run(
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		result.Error = fmt.Sprintf(
-			"run tesseract: %v",
-			err,
-		)
+		if ctx.Err() != nil {
+			result.Error = fmt.Sprintf(
+				"tesseract canceled: %v",
+				ctx.Err(),
+			)
+		} else {
+			result.Error = fmt.Sprintf(
+				"run tesseract: %v",
+				err,
+			)
+		}
+
 		result.Stderr = stderr.String()
 		result.DurationMS = time.Since(start).Milliseconds()
 
