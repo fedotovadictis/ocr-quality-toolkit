@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"ocr-quality-toolkit/internal/evaluate"
 	"ocr-quality-toolkit/internal/normalize"
+	"ocr-quality-toolkit/internal/runner"
 
 	"ocr-quality-toolkit/internal/corpus"
 )
@@ -14,7 +16,7 @@ import (
 func Run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(
-			"usage: ocrq <import-mws|evaluate> [options]",
+			"usage: ocrq <import-mws|evaluate|run-tesseract> [options]",
 		)
 	}
 
@@ -23,6 +25,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		return runEvaluate(args[1:], stdout, stderr)
 	case "import-mws":
 		return runImportMWS(args[1:], stdout, stderr)
+	case "run-tesseract":
+		return runTesseract(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -134,6 +138,79 @@ func runEvaluate(args []string, stdout, stderr io.Writer) error {
 
 	fmt.Fprintf(stdout, "evaluated: %d\n", len(results))
 	fmt.Fprintf(stdout, "report: %s\n", *outputPath)
+
+	return nil
+}
+func runTesseract(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("run-tesseract", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+
+	manifestPath := flags.String(
+		"manifest",
+		"",
+		"path to manifest JSONL",
+	)
+	binaryPath := flags.String(
+		"binary",
+		"tesseract",
+		"path to tesseract binary",
+	)
+	languages := flags.String(
+		"languages",
+		"rus+eng",
+		"tesseract languages",
+	)
+	psm := flags.Int(
+		"psm",
+		3,
+		"tesseract page segmentation mode",
+	)
+	workers := flags.Int(
+		"workers",
+		1,
+		"number of parallel OCR workers",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *manifestPath == "" {
+		return errors.New("missing required flag: -manifest")
+	}
+
+	if *workers < 1 {
+		return errors.New("workers must be greater than zero")
+	}
+
+	records, err := corpus.ReadManifest(*manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+
+	tasks := make([]runner.Task, 0, len(records))
+
+	for _, record := range records {
+		tasks = append(tasks, runner.Task{
+			ID:        record.ID,
+			ImagePath: record.Image,
+		})
+	}
+
+	tesseract := runner.NewTesseractRunner(
+		*binaryPath,
+		*languages,
+		*psm,
+	)
+
+	results := runner.RunTasks(
+		context.Background(),
+		tesseract,
+		tasks,
+		*workers,
+	)
+
+	fmt.Fprintf(stdout, "processed: %d\n", len(results))
 
 	return nil
 }
