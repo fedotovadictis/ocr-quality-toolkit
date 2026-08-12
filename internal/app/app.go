@@ -9,6 +9,7 @@ import (
 	"ocr-quality-toolkit/internal/evaluate"
 	"ocr-quality-toolkit/internal/normalize"
 	"ocr-quality-toolkit/internal/runner"
+	"os"
 
 	"ocr-quality-toolkit/internal/corpus"
 )
@@ -170,6 +171,17 @@ func runTesseract(args []string, stdout, stderr io.Writer) error {
 		1,
 		"number of parallel OCR workers",
 	)
+	resume := flags.Bool(
+		"resume",
+		false,
+		"continue OCR run using existing results",
+	)
+
+	outputPath := flags.String(
+		"out",
+		"",
+		"path to output results JSONL",
+	)
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -177,6 +189,9 @@ func runTesseract(args []string, stdout, stderr io.Writer) error {
 
 	if *manifestPath == "" {
 		return errors.New("missing required flag: -manifest")
+	}
+	if *outputPath == "" {
+		return errors.New("missing required flag: -out")
 	}
 
 	if *workers < 1 {
@@ -197,18 +212,31 @@ func runTesseract(args []string, stdout, stderr io.Writer) error {
 		})
 	}
 
+	if *resume {
+		existing, err := runner.ReadResults(*outputPath)
+		if err == nil {
+			tasks = runner.FilterPendingTasks(tasks, existing)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("read existing results: %w", err)
+		}
+	}
+
 	tesseract := runner.NewTesseractRunner(
 		*binaryPath,
 		*languages,
 		*psm,
 	)
 
-	results := runner.RunTasks(
+	results, err := runner.RunTasksAndSave(
 		context.Background(),
 		tesseract,
 		tasks,
 		*workers,
+		*outputPath,
 	)
+	if err != nil {
+		return fmt.Errorf("run OCR: %w", err)
+	}
 
 	fmt.Fprintf(stdout, "processed: %d\n", len(results))
 

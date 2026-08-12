@@ -91,3 +91,62 @@ func TestReadResults(t *testing.T) {
 		)
 	}
 }
+func TestFilterPendingTasksPartialRun(t *testing.T) {
+	tasks := []Task{
+		{ID: "page-001", ImagePath: "1.png"},
+		{ID: "page-002", ImagePath: "2.png"},
+		{ID: "page-003", ImagePath: "3.png"},
+	}
+
+	existing := []Result{
+		{
+			ID:   "page-001",
+			Text: "already done",
+		},
+	}
+
+	pending := FilterPendingTasks(tasks, existing)
+
+	if len(pending) != 2 {
+		t.Fatalf(
+			"expected 2 pending tasks, got %d",
+			len(pending),
+		)
+	}
+
+	if pending[0].ID != "page-002" {
+		t.Fatalf(
+			"expected first pending id %q, got %q",
+			"page-002",
+			pending[0].ID,
+		)
+	}
+
+	if pending[1].ID != "page-003" {
+		t.Fatalf(
+			"expected second pending id %q, got %q",
+			"page-003",
+			pending[1].ID,
+		)
+	}
+}
+func TestFilterPendingTasksNoDuplicatesOnResume(t *testing.T) {
+	tasks := []Task{
+		{ID: "page-001"},
+		{ID: "page-002"},
+	}
+
+	existing := []Result{
+		{ID: "page-001", Text: "done"},
+		{ID: "page-002", Error: "ocr failed"},
+	}
+
+	pending := FilterPendingTasks(tasks, existing)
+
+	if len(pending) != 0 {
+		t.Fatalf(
+			"expected no pending tasks, got %d",
+			len(pending),
+		)
+	}
+}
