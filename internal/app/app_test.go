@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"ocr-quality-toolkit/internal/evaluate"
+	"ocr-quality-toolkit/internal/report"
 	"ocr-quality-toolkit/internal/runner"
 	"os"
 	"path/filepath"
@@ -124,16 +125,26 @@ func TestRunEvaluate(t *testing.T) {
 		t.Fatalf("read report: %v", err)
 	}
 
-	var results []evaluate.Result
-	if err := json.Unmarshal(data, &results); err != nil {
+	var got report.Report
+	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("decode report: %v", err)
 	}
 
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	if len(got.Results) != 1 {
+		t.Fatalf(
+			"expected 1 result, got %d",
+			len(got.Results),
+		)
 	}
 
-	result := results[0]
+	if got.Overall.Total != 1 {
+		t.Fatalf(
+			"expected overall total 1, got %d",
+			got.Overall.Total,
+		)
+	}
+
+	result := got.Results[0]
 
 	if result.ID != "1" {
 		t.Fatalf("unexpected ID: %q", result.ID)

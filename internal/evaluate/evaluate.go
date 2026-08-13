@@ -2,6 +2,7 @@ package evaluate
 
 import (
 	"fmt"
+	"strings"
 
 	"ocr-quality-toolkit/internal/corpus"
 	"ocr-quality-toolkit/internal/metrics"
@@ -15,6 +16,18 @@ type Result struct {
 	Similarity float64 `json:"similarity"`
 	ExactMatch bool    `json:"exact_match"`
 	Status     Status  `json:"status"`
+
+	ReferenceCharacters    int `json:"reference_characters"`
+	CharacterHits          int `json:"character_hits"`
+	CharacterSubstitutions int `json:"character_substitutions"`
+	CharacterDeletions     int `json:"character_deletions"`
+	CharacterInsertions    int `json:"character_insertions"`
+
+	ReferenceWords    int `json:"reference_words"`
+	WordHits          int `json:"word_hits"`
+	WordSubstitutions int `json:"word_substitutions"`
+	WordDeletions     int `json:"word_deletions"`
+	WordInsertions    int `json:"word_insertions"`
 }
 
 func Evaluate(
@@ -95,9 +108,33 @@ func Evaluate(
 
 		result.CER = metrics.CER(reference, hypothesis)
 		result.WER = metrics.WER(reference, hypothesis)
-
 		referenceSymbols := stringSymbols(reference)
 		hypothesisSymbols := stringSymbols(hypothesis)
+
+		characterAlignment := metrics.Align(
+			referenceSymbols,
+			hypothesisSymbols,
+		)
+
+		result.ReferenceCharacters = len(referenceSymbols)
+		result.CharacterHits = characterAlignment.Hits
+		result.CharacterSubstitutions = characterAlignment.Substitutions
+		result.CharacterDeletions = characterAlignment.Deletions
+		result.CharacterInsertions = characterAlignment.Insertions
+
+		referenceWords := strings.Fields(reference)
+		hypothesisWords := strings.Fields(hypothesis)
+
+		wordAlignment := metrics.Align(
+			referenceWords,
+			hypothesisWords,
+		)
+
+		result.ReferenceWords = len(referenceWords)
+		result.WordHits = wordAlignment.Hits
+		result.WordSubstitutions = wordAlignment.Substitutions
+		result.WordDeletions = wordAlignment.Deletions
+		result.WordInsertions = wordAlignment.Insertions
 
 		result.Similarity = metrics.Similarity(
 			referenceSymbols,

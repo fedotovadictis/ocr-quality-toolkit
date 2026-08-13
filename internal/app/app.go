@@ -8,6 +8,7 @@ import (
 	"io"
 	"ocr-quality-toolkit/internal/evaluate"
 	"ocr-quality-toolkit/internal/normalize"
+	"ocr-quality-toolkit/internal/report"
 	"ocr-quality-toolkit/internal/runner"
 	"os"
 
@@ -133,7 +134,12 @@ func runEvaluate(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("evaluate: %w", err)
 	}
 
-	if err := evaluate.WriteReport(*outputPath, results); err != nil {
+	fullReport := report.BuildReport(
+		records,
+		results,
+	)
+
+	if err := report.WriteJSON(*outputPath, fullReport); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
 
