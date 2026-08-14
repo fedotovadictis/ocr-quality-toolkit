@@ -28,6 +28,10 @@ type Result struct {
 	WordSubstitutions int `json:"word_substitutions"`
 	WordDeletions     int `json:"word_deletions"`
 	WordInsertions    int `json:"word_insertions"`
+
+	Reference  string `json:"reference"`
+	Hypothesis string `json:"hypothesis"`
+	Image      string `json:"image"`
 }
 
 func Evaluate(
@@ -90,6 +94,10 @@ func Evaluate(
 			hypothesisText,
 			profile,
 		)
+		result.Reference = reference
+		result.Hypothesis = hypothesisText
+		result.Image = record.Image
+
 		if err != nil {
 			return nil, fmt.Errorf(
 				"evaluate record %q: %w",

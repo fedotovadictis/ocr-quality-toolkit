@@ -6,19 +6,21 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+
+	"ocr-quality-toolkit/internal/corpus"
 	"ocr-quality-toolkit/internal/evaluate"
 	"ocr-quality-toolkit/internal/normalize"
 	"ocr-quality-toolkit/internal/report"
 	"ocr-quality-toolkit/internal/runner"
-	"os"
-
-	"ocr-quality-toolkit/internal/corpus"
 )
+
+var ErrRegression = errors.New("quality regression detected")
 
 func Run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(
-			"usage: ocrq <import-mws|evaluate|run-tesseract> [options]",
+			"usage: ocrq <import-mws|evaluate|run-tesseract|compare> [options]",
 		)
 	}
 
@@ -29,18 +31,28 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		return runImportMWS(args[1:], stdout, stderr)
 	case "run-tesseract":
 		return runTesseract(args[1:], stdout, stderr)
+	case "compare":
+		return runCompare(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
-
 }
 
 func runImportMWS(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("import-mws", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
-	metadataPath := flags.String("metadata", "", "path to MWS metadata JSONL")
-	outputPath := flags.String("output", "", "path to output manifest JSONL")
+	metadataPath := flags.String(
+		"metadata",
+		"",
+		"path to MWS metadata JSONL",
+	)
+
+	outputPath := flags.String(
+		"output",
+		"",
+		"path to output manifest JSONL",
+	)
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -49,6 +61,7 @@ func runImportMWS(args []string, stdout, stderr io.Writer) error {
 	if *metadataPath == "" {
 		return errors.New("missing required flag: -metadata")
 	}
+
 	if *outputPath == "" {
 		return errors.New("missing required flag: -output")
 	}
@@ -71,6 +84,7 @@ func runImportMWS(args []string, stdout, stderr io.Writer) error {
 
 	return nil
 }
+
 func runEvaluate(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("evaluate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -80,16 +94,19 @@ func runEvaluate(args []string, stdout, stderr io.Writer) error {
 		"",
 		"path to manifest JSONL",
 	)
+
 	hypothesesPath := flags.String(
 		"hypotheses",
 		"",
 		"path to hypotheses JSONL",
 	)
+
 	normalization := flags.String(
 		"normalization",
 		"",
 		"normalization profile: strict or plain-text-ru",
 	)
+
 	outputPath := flags.String(
 		"out",
 		"",
@@ -103,12 +120,15 @@ func runEvaluate(args []string, stdout, stderr io.Writer) error {
 	if *manifestPath == "" {
 		return errors.New("missing required flag: -manifest")
 	}
+
 	if *hypothesesPath == "" {
 		return errors.New("missing required flag: -hypotheses")
 	}
+
 	if *normalization == "" {
 		return errors.New("missing required flag: -normalization")
 	}
+
 	if *outputPath == "" {
 		return errors.New("missing required flag: -out")
 	}
@@ -148,6 +168,7 @@ func runEvaluate(args []string, stdout, stderr io.Writer) error {
 
 	return nil
 }
+
 func runTesseract(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("run-tesseract", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -157,26 +178,31 @@ func runTesseract(args []string, stdout, stderr io.Writer) error {
 		"",
 		"path to manifest JSONL",
 	)
+
 	binaryPath := flags.String(
 		"binary",
 		"tesseract",
 		"path to tesseract binary",
 	)
+
 	languages := flags.String(
 		"languages",
 		"rus+eng",
 		"tesseract languages",
 	)
+
 	psm := flags.Int(
 		"psm",
 		3,
 		"tesseract page segmentation mode",
 	)
+
 	workers := flags.Int(
 		"workers",
 		1,
 		"number of parallel OCR workers",
 	)
+
 	resume := flags.Bool(
 		"resume",
 		false,
@@ -196,6 +222,7 @@ func runTesseract(args []string, stdout, stderr io.Writer) error {
 	if *manifestPath == "" {
 		return errors.New("missing required flag: -manifest")
 	}
+
 	if *outputPath == "" {
 		return errors.New("missing required flag: -out")
 	}
@@ -221,9 +248,15 @@ func runTesseract(args []string, stdout, stderr io.Writer) error {
 	if *resume {
 		existing, err := runner.ReadResults(*outputPath)
 		if err == nil {
-			tasks = runner.FilterPendingTasks(tasks, existing)
+			tasks = runner.FilterPendingTasks(
+				tasks,
+				existing,
+			)
 		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("read existing results: %w", err)
+			return fmt.Errorf(
+				"read existing results: %w",
+				err,
+			)
 		}
 	}
 
@@ -245,6 +278,101 @@ func runTesseract(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "processed: %d\n", len(results))
+
+	return nil
+}
+
+func runCompare(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("compare", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+
+	baselinePath := flags.String(
+		"baseline",
+		"",
+		"path to baseline JSON report",
+	)
+
+	currentPath := flags.String(
+		"current",
+		"",
+		"path to current JSON report",
+	)
+
+	maxCERIncrease := flags.Float64(
+		"max-cer-increase",
+		0,
+		"maximum allowed CER increase",
+	)
+
+	maxWERIncrease := flags.Float64(
+		"max-wer-increase",
+		0,
+		"maximum allowed WER increase",
+	)
+
+	maxCoverageDecrease := flags.Float64(
+		"max-coverage-decrease",
+		0,
+		"maximum allowed coverage decrease",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *baselinePath == "" {
+		return errors.New("missing required flag: -baseline")
+	}
+
+	if *currentPath == "" {
+		return errors.New("missing required flag: -current")
+	}
+
+	baseline, err := report.ReadJSON(*baselinePath)
+	if err != nil {
+		return fmt.Errorf("read baseline: %w", err)
+	}
+
+	current, err := report.ReadJSON(*currentPath)
+	if err != nil {
+		return fmt.Errorf("read current: %w", err)
+	}
+
+	comparison := report.CompareReports(
+		baseline,
+		current,
+	)
+
+	fmt.Fprintf(
+		stdout,
+		"CER delta: %.6f\n",
+		comparison.CERDelta,
+	)
+
+	fmt.Fprintf(
+		stdout,
+		"WER delta: %.6f\n",
+		comparison.WERDelta,
+	)
+
+	fmt.Fprintf(
+		stdout,
+		"coverage delta: %.6f\n",
+		comparison.CoverageDelta,
+	)
+
+	thresholds := report.Thresholds{
+		MaxCERIncrease:      *maxCERIncrease,
+		MaxWERIncrease:      *maxWERIncrease,
+		MaxCoverageDecrease: *maxCoverageDecrease,
+	}
+
+	if report.HasRegression(
+		comparison,
+		thresholds,
+	) {
+		return ErrRegression
+	}
 
 	return nil
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -8,8 +9,21 @@ import (
 )
 
 func main() {
-	if err := app.Run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	err := app.Run(
+		os.Args[1:],
+		os.Stdout,
+		os.Stderr,
+	)
+
+	if err == nil {
+		return
+	}
+
+	fmt.Fprintln(os.Stderr, err)
+
+	if errors.Is(err, app.ErrRegression) {
 		os.Exit(1)
 	}
+
+	os.Exit(2)
 }

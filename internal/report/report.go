@@ -48,3 +48,20 @@ func WriteJSON(path string, report Report) error {
 
 	return nil
 }
+func ReadJSON(path string) (Report, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Report{}, fmt.Errorf("open report %q: %w", path, err)
+	}
+	defer file.Close()
+
+	var report Report
+
+	decoder := json.NewDecoder(file)
+
+	if err := decoder.Decode(&report); err != nil {
+		return Report{}, fmt.Errorf("decode report %q: %w", path, err)
+	}
+
+	return report, nil
+}

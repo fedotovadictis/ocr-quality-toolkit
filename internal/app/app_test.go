@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"ocr-quality-toolkit/internal/evaluate"
 	"ocr-quality-toolkit/internal/report"
 	"ocr-quality-toolkit/internal/runner"
@@ -270,6 +271,114 @@ func TestRunTesseractResumeSkipsCompletedRecords(t *testing.T) {
 			"expected id %q, got %q",
 			"page-001",
 			results[0].ID,
+		)
+	}
+}
+func TestRunCompareSuccess(t *testing.T) {
+	dir := t.TempDir()
+
+	baselinePath := filepath.Join(dir, "baseline.json")
+	currentPath := filepath.Join(dir, "current.json")
+
+	baseline := report.Report{
+		Overall: report.EvaluationStats{
+			CER:      0.10,
+			WER:      0.20,
+			Coverage: 0.90,
+		},
+	}
+
+	current := report.Report{
+		Overall: report.EvaluationStats{
+			CER:      0.11,
+			WER:      0.19,
+			Coverage: 0.92,
+		},
+	}
+
+	if err := report.WriteJSON(baselinePath, baseline); err != nil {
+		t.Fatalf("write baseline: %v", err)
+	}
+
+	if err := report.WriteJSON(currentPath, current); err != nil {
+		t.Fatalf("write current: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"compare",
+			"-baseline", baselinePath,
+			"-current", currentPath,
+			"-max-cer-increase", "0.02",
+			"-max-wer-increase", "0.02",
+			"-max-coverage-decrease", "0.05",
+		},
+		&stdout,
+		&stderr,
+	)
+
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), "CER delta") {
+		t.Fatalf("unexpected output: %q", stdout.String())
+	}
+}
+
+func TestRunCompareRegression(t *testing.T) {
+	dir := t.TempDir()
+
+	baselinePath := filepath.Join(dir, "baseline.json")
+	currentPath := filepath.Join(dir, "current.json")
+
+	baseline := report.Report{
+		Overall: report.EvaluationStats{
+			CER:      0.10,
+			WER:      0.20,
+			Coverage: 0.95,
+		},
+	}
+
+	current := report.Report{
+		Overall: report.EvaluationStats{
+			CER:      0.20,
+			WER:      0.20,
+			Coverage: 0.95,
+		},
+	}
+
+	if err := report.WriteJSON(baselinePath, baseline); err != nil {
+		t.Fatalf("write baseline: %v", err)
+	}
+
+	if err := report.WriteJSON(currentPath, current); err != nil {
+		t.Fatalf("write current: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"compare",
+			"-baseline", baselinePath,
+			"-current", currentPath,
+			"-max-cer-increase", "0.02",
+			"-max-wer-increase", "0.02",
+			"-max-coverage-decrease", "0.05",
+		},
+		&stdout,
+		&stderr,
+	)
+
+	if !errors.Is(err, ErrRegression) {
+		t.Fatalf(
+			"expected ErrRegression, got %v",
+			err,
 		)
 	}
 }
