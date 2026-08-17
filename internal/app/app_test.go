@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"ocr-quality-toolkit/internal/corpus"
 	"ocr-quality-toolkit/internal/evaluate"
+	"ocr-quality-toolkit/internal/generator"
 	"ocr-quality-toolkit/internal/report"
 	"ocr-quality-toolkit/internal/runner"
 	"os"
@@ -380,5 +384,104 @@ func TestRunCompareRegression(t *testing.T) {
 			"expected ErrRegression, got %v",
 			err,
 		)
+	}
+}
+func TestRunBuildWorkset(t *testing.T) {
+	dir := t.TempDir()
+
+	realDir := filepath.Join(dir, "real")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatalf("create real dir: %v", err)
+	}
+
+	sourcePath := filepath.Join(realDir, "page.png")
+
+	source := image.NewRGBA(image.Rect(0, 0, 20, 20))
+	for y := 0; y < 20; y++ {
+		for x := 0; x < 20; x++ {
+			source.Set(x, y, color.RGBA{
+				R: uint8(x * 10),
+				G: uint8(y * 10),
+				B: 100,
+				A: 255,
+			})
+		}
+	}
+
+	if err := generator.SavePNG(sourcePath, source); err != nil {
+		t.Fatalf("save source image: %v", err)
+	}
+
+	realManifestPath := filepath.Join(dir, "real-manifest.jsonl")
+	syntheticManifestPath := filepath.Join(dir, "synthetic-manifest.jsonl")
+	worksetManifestPath := filepath.Join(dir, "manifest.jsonl")
+
+	realRecords := []corpus.Record{
+		{
+			ID:         "page-001",
+			Image:      "real/page.png",
+			References: []string{"Пример текста"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+			Tags:       []string{"real"},
+		},
+	}
+
+	if err := corpus.WriteJSONL(realManifestPath, realRecords); err != nil {
+		t.Fatalf("write real manifest: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"build-workset",
+			"-root", dir,
+			"-real-manifest", realManifestPath,
+			"-synthetic-manifest", syntheticManifestPath,
+			"-out", worksetManifestPath,
+			"-profile", "grayscale",
+			"-seed", "42",
+		},
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf(
+			"build-workset failed: %v\nstderr: %s",
+			err,
+			stderr.String(),
+		)
+	}
+
+	workset, err := corpus.ReadManifest(worksetManifestPath)
+	if err != nil {
+		t.Fatalf("read workset manifest: %v", err)
+	}
+
+	if len(workset) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(workset))
+	}
+
+	if workset[0].ID != "page-001" {
+		t.Fatalf("unexpected real id: %q", workset[0].ID)
+	}
+
+	if workset[1].ParentID != "page-001" {
+		t.Fatalf(
+			"unexpected synthetic parent id: %q",
+			workset[1].ParentID,
+		)
+	}
+
+	syntheticPath := filepath.Join(
+		dir,
+		"synthetic",
+		"page-001__grayscale.png",
+	)
+
+	if _, err := os.Stat(syntheticPath); err != nil {
+		t.Fatalf("synthetic image not created: %v", err)
 	}
 }
