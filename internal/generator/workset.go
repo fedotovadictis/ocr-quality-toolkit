@@ -30,8 +30,8 @@ func BuildSyntheticRecord(
 		Language:   parent.Language,
 		Task:       parent.Task,
 		Tags: []string{
-			"synthetic",
 			profile,
+			"synthetic",
 		},
 		Transform: corpus.Transform{
 			Name: profile,

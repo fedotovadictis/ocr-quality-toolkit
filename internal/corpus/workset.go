@@ -1,6 +1,9 @@
 package corpus
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // BuildWorkset объединяет реальные и синтетические записи
 // в единый рабочий корпус и проверяет его целостность.
@@ -8,6 +11,10 @@ func BuildWorkset(real, synthetic []Record) ([]Record, error) {
 	records := make([]Record, 0, len(real)+len(synthetic))
 	records = append(records, real...)
 	records = append(records, synthetic...)
+
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].ID < records[j].ID
+	})
 
 	if err := ValidateCorpusIntegrity(records); err != nil {
 		return nil, fmt.Errorf("validate workset: %w", err)

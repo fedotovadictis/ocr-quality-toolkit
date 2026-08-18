@@ -2,10 +2,13 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
+	"image/png"
 	"ocr-quality-toolkit/internal/corpus"
 	"ocr-quality-toolkit/internal/evaluate"
 	"ocr-quality-toolkit/internal/generator"
@@ -483,5 +486,94 @@ func TestRunBuildWorkset(t *testing.T) {
 
 	if _, err := os.Stat(syntheticPath); err != nil {
 		t.Fatalf("synthetic image not created: %v", err)
+	}
+}
+func TestRunCorpusValidateSuccess(t *testing.T) {
+	dir := t.TempDir()
+
+	imageDir := filepath.Join(dir, "images")
+	if err := os.MkdirAll(imageDir, 0o755); err != nil {
+		t.Fatalf("create image dir: %v", err)
+	}
+
+	imagePath := filepath.Join(imageDir, "page.png")
+
+	img := image.NewRGBA(image.Rect(0, 0, 32, 24))
+
+	file, err := os.Create(imagePath)
+	if err != nil {
+		t.Fatalf("create image: %v", err)
+	}
+
+	if err := png.Encode(file, img); err != nil {
+		file.Close()
+		t.Fatalf("encode image: %v", err)
+	}
+
+	if err := file.Close(); err != nil {
+		t.Fatalf("close image: %v", err)
+	}
+
+	data, err := os.ReadFile(imagePath)
+	if err != nil {
+		t.Fatalf("read image: %v", err)
+	}
+
+	sum := sha256.Sum256(data)
+
+	manifestPath := filepath.Join(dir, "manifest.jsonl")
+
+	records := []corpus.Record{
+		{
+			ID:         "page-001",
+			Image:      "images/page.png",
+			References: []string{"Тест"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+			Width:      32,
+			Height:     24,
+			Format:     "png",
+			Tags:       []string{"real"},
+			SHA256:     hex.EncodeToString(sum[:]),
+		},
+	}
+
+	if err := corpus.WriteJSONL(manifestPath, records); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err = Run(
+		[]string{
+			"corpus",
+			"validate",
+			"-manifest",
+			manifestPath,
+		},
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf(
+			"corpus validate failed: %v\nstderr: %s",
+			err,
+			stderr.String(),
+		)
+	}
+
+	if !strings.Contains(stdout.String(), "Corpus is valid") {
+		t.Fatalf(
+			"unexpected stdout: %s",
+			stdout.String(),
+		)
+	}
+
+	if !strings.Contains(stdout.String(), "Records: 1") {
+		t.Fatalf(
+			"unexpected stdout: %s",
+			stdout.String(),
+		)
 	}
 }

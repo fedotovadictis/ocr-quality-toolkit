@@ -72,6 +72,30 @@ func TestBuildSyntheticWorkset(t *testing.T) {
 	if got[0].ParentID != "page-001" {
 		t.Fatalf("unexpected parent id: %q", got[0].ParentID)
 	}
+	if got[0].Width != 20 {
+		t.Fatalf("unexpected width: %d", got[0].Width)
+	}
+
+	if got[0].Height != 20 {
+		t.Fatalf("unexpected height: %d", got[0].Height)
+	}
+
+	if got[0].Format != "png" {
+		t.Fatalf("unexpected format: %q", got[0].Format)
+	}
+
+	if got[0].SHA256 == "" {
+		t.Fatal("expected SHA-256 to be set")
+	}
+
+	if len(got[0].Tags) != 2 {
+		t.Fatalf("unexpected tags: %#v", got[0].Tags)
+	}
+
+	if got[0].Tags[0] != "grayscale" ||
+		got[0].Tags[1] != "synthetic" {
+		t.Fatalf("tags are not sorted: %#v", got[0].Tags)
+	}
 
 	target := filepath.Join(
 		root,

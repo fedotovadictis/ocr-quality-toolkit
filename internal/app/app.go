@@ -39,6 +39,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		return runCompare(args[1:], stdout, stderr)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
+	case "corpus":
+		return runCorpus(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -549,6 +551,85 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "report: %s\n", *outputPath)
+
+	return nil
+}
+func runCorpus(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		return errors.New(
+			"usage: ocrq corpus <validate> [options]",
+		)
+	}
+
+	switch args[0] {
+	case "validate":
+		return runCorpusValidate(args[1:], stdout, stderr)
+	default:
+		return fmt.Errorf(
+			"unknown corpus command %q",
+			args[0],
+		)
+	}
+}
+
+func runCorpusValidate(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet(
+		"corpus validate",
+		flag.ContinueOnError,
+	)
+	flags.SetOutput(stderr)
+
+	manifestPath := flags.String(
+		"manifest",
+		"",
+		"path to corpus manifest JSONL",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *manifestPath == "" {
+		return errors.New(
+			"missing required flag: -manifest",
+		)
+	}
+
+	records, err := corpus.ReadManifest(*manifestPath)
+	if err != nil {
+		return fmt.Errorf(
+			"read manifest: %w",
+			err,
+		)
+	}
+
+	root := filepath.Dir(*manifestPath)
+
+	validationErrors := corpus.ValidateCorpus(
+		root,
+		records,
+	)
+
+	if len(validationErrors) > 0 {
+		for _, validationErr := range validationErrors {
+			fmt.Fprintln(
+				stderr,
+				validationErr,
+			)
+		}
+
+		return fmt.Errorf(
+			"corpus validation failed: %d error(s)",
+			len(validationErrors),
+		)
+	}
+
+	fmt.Fprintln(stdout, "Corpus is valid")
+	fmt.Fprintf(
+		stdout,
+		"Records: %d\n",
+		len(records),
+	)
 
 	return nil
 }
