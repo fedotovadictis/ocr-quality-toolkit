@@ -7,8 +7,13 @@ import (
 	"fmt"
 	"io"
 	"ocr-quality-toolkit/internal/generator"
+	ocrhash "ocr-quality-toolkit/internal/hash"
+	"ocr-quality-toolkit/internal/imageinfo"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 
 	"ocr-quality-toolkit/internal/corpus"
 	"ocr-quality-toolkit/internal/evaluate"
@@ -27,20 +32,40 @@ func Run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	switch args[0] {
-	case "evaluate":
-		return runEvaluate(args[1:], stdout, stderr)
-	case "import-mws":
-		return runImportMWS(args[1:], stdout, stderr)
-	case "build-workset":
-		return runBuildWorkset(args[1:], stdout, stderr)
-	case "run-tesseract":
-		return runTesseract(args[1:], stdout, stderr)
-	case "compare":
-		return runCompare(args[1:], stdout, stderr)
-	case "report":
-		return runReport(args[1:], stdout, stderr)
 	case "corpus":
 		return runCorpus(args[1:], stdout, stderr)
+
+	case "image":
+		return runImage(args[1:], stdout, stderr)
+
+	case "run":
+		return runRun(args[1:], stdout, stderr)
+
+	case "evaluate":
+		return runEvaluate(args[1:], stdout, stderr)
+
+	case "report":
+		return runReport(args[1:], stdout, stderr)
+
+	case "compare":
+		return runCompare(args[1:], stdout, stderr)
+
+	case "version":
+		return runVersion(args[1:], stdout, stderr)
+
+		// Старые команды пока оставляем для совместимости.
+	case "import-mws":
+		return runImportMWS(args[1:], stdout, stderr)
+
+	case "build-workset":
+		return runBuildWorkset(args[1:], stdout, stderr)
+
+	case "run-tesseract":
+		return runTesseract(args[1:], stdout, stderr)
+
+	case "transform":
+		return runImageTransform(args[1:], stdout, stderr)
+
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -557,13 +582,20 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 func runCorpus(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(
-			"usage: ocrq corpus <validate> [options]",
+			"usage: ocrq corpus <import-mws|validate|stats> [options]",
 		)
 	}
 
 	switch args[0] {
+	case "import-mws":
+		return runImportMWS(args[1:], stdout, stderr)
+
 	case "validate":
 		return runCorpusValidate(args[1:], stdout, stderr)
+
+	case "stats":
+		return runCorpusStats(args[1:], stdout, stderr)
+
 	default:
 		return fmt.Errorf(
 			"unknown corpus command %q",
@@ -629,6 +661,358 @@ func runCorpusValidate(args []string, stdout, stderr io.Writer) error {
 		stdout,
 		"Records: %d\n",
 		len(records),
+	)
+
+	return nil
+}
+func runImage(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		return errors.New(
+			"usage: ocrq image <transform> [options]",
+		)
+	}
+
+	switch args[0] {
+	case "transform":
+		return runImageTransform(args[1:], stdout, stderr)
+
+	default:
+		return fmt.Errorf(
+			"unknown image command %q",
+			args[0],
+		)
+	}
+}
+
+func runRun(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		return errors.New(
+			"usage: ocrq run <tesseract> [options]",
+		)
+	}
+
+	switch args[0] {
+	case "tesseract":
+		return runTesseract(args[1:], stdout, stderr)
+	default:
+		return fmt.Errorf(
+			"unknown run command %q",
+			args[0],
+		)
+	}
+}
+
+func runVersion(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("version", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if flags.NArg() != 0 {
+		return errors.New("version does not accept arguments")
+	}
+
+	fmt.Fprintln(stdout, "ocrq version 1")
+	return nil
+}
+func runCorpusStats(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet(
+		"corpus stats",
+		flag.ContinueOnError,
+	)
+	flags.SetOutput(stderr)
+
+	manifestPath := flags.String(
+		"manifest",
+		"",
+		"path to corpus manifest JSONL",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *manifestPath == "" {
+		return errors.New(
+			"missing required flag: -manifest",
+		)
+	}
+
+	records, err := corpus.ReadManifest(*manifestPath)
+	if err != nil {
+		return fmt.Errorf(
+			"read manifest: %w",
+			err,
+		)
+	}
+
+	total := len(records)
+	realCount := 0
+	syntheticCount := 0
+
+	languages := make(map[string]int)
+	formats := make(map[string]int)
+	transforms := make(map[string]int)
+
+	for _, record := range records {
+		languages[record.Language]++
+		formats[record.Format]++
+
+		if record.ParentID == "" {
+			realCount++
+		} else {
+			syntheticCount++
+		}
+
+		if record.Transform.Name != "" {
+			transforms[record.Transform.Name]++
+		}
+	}
+
+	fmt.Fprintf(stdout, "Records: %d\n", total)
+	fmt.Fprintf(stdout, "Real: %d\n", realCount)
+	fmt.Fprintf(stdout, "Synthetic: %d\n", syntheticCount)
+
+	fmt.Fprintln(stdout, "Languages:")
+	for _, key := range sortedStringKeys(languages) {
+		fmt.Fprintf(
+			stdout,
+			"  %s: %d\n",
+			key,
+			languages[key],
+		)
+	}
+
+	fmt.Fprintln(stdout, "Formats:")
+	for _, key := range sortedStringKeys(formats) {
+		fmt.Fprintf(
+			stdout,
+			"  %s: %d\n",
+			key,
+			formats[key],
+		)
+	}
+
+	fmt.Fprintln(stdout, "Transforms:")
+	for _, key := range sortedStringKeys(transforms) {
+		fmt.Fprintf(
+			stdout,
+			"  %s: %d\n",
+			key,
+			transforms[key],
+		)
+	}
+
+	return nil
+}
+
+func sortedStringKeys(values map[string]int) []string {
+	keys := make([]string, 0, len(values))
+
+	for key := range values {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	return keys
+}
+func runImageTransform(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet(
+		"image transform",
+		flag.ContinueOnError,
+	)
+	flags.SetOutput(stderr)
+
+	manifestPath := flags.String(
+		"manifest",
+		"",
+		"path to source manifest JSONL",
+	)
+
+	profilesValue := flags.String(
+		"profiles",
+		"",
+		"comma-separated transform profiles",
+	)
+
+	seedValue := flags.String(
+		"seed",
+		"",
+		"deterministic transform seed",
+	)
+
+	outputDir := flags.String(
+		"out",
+		"",
+		"path to output directory",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *manifestPath == "" {
+		return errors.New("missing required flag: -manifest")
+	}
+
+	if *profilesValue == "" {
+		return errors.New("missing required flag: -profiles")
+	}
+
+	if *seedValue == "" {
+		return errors.New("missing required flag: -seed")
+	}
+
+	if *outputDir == "" {
+		return errors.New("missing required flag: -out")
+	}
+
+	seed, err := strconv.ParseInt(*seedValue, 10, 64)
+	if err != nil {
+		return fmt.Errorf(
+			"invalid seed %q: %w",
+			*seedValue,
+			err,
+		)
+	}
+
+	records, err := corpus.ReadManifest(*manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+
+	if err := os.MkdirAll(*outputDir, 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+
+	imageDir := filepath.Join(*outputDir, "images")
+	if err := os.MkdirAll(imageDir, 0o755); err != nil {
+		return fmt.Errorf("create image directory: %w", err)
+	}
+
+	profiles := strings.Split(*profilesValue, ",")
+
+	var transformed []corpus.Record
+
+	sourceRoot := filepath.Dir(*manifestPath)
+
+	for _, profile := range profiles {
+		profile = strings.TrimSpace(profile)
+
+		if profile == "" {
+			continue
+		}
+
+		for _, parent := range records {
+			sourcePath := filepath.Join(
+				sourceRoot,
+				filepath.FromSlash(parent.Image),
+			)
+
+			id := parent.ID + "__" + profile
+
+			imagePath := filepath.ToSlash(
+				filepath.Join(
+					"images",
+					id+".png",
+				),
+			)
+
+			targetPath := filepath.Join(
+				*outputDir,
+				filepath.FromSlash(imagePath),
+			)
+
+			if err := generator.BuildSyntheticImage(
+				sourcePath,
+				targetPath,
+				profile,
+				seed,
+			); err != nil {
+				return fmt.Errorf(
+					"transform record %q with profile %q: %w",
+					parent.ID,
+					profile,
+					err,
+				)
+			}
+
+			record, err := generator.BuildSyntheticRecord(
+				parent,
+				imagePath,
+				profile,
+				*seedValue,
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"build transformed record %q: %w",
+					parent.ID,
+					err,
+				)
+			}
+
+			format, width, height, err := imageinfo.Read(targetPath)
+			if err != nil {
+				return fmt.Errorf(
+					"read transformed image info %q: %w",
+					parent.ID,
+					err,
+				)
+			}
+
+			checksum, err := ocrhash.FileSHA256(targetPath)
+			if err != nil {
+				return fmt.Errorf(
+					"calculate transformed image SHA-256 %q: %w",
+					parent.ID,
+					err,
+				)
+			}
+
+			record.Format = format
+			record.Width = width
+			record.Height = height
+			record.SHA256 = checksum
+
+			transformed = append(transformed, record)
+		}
+	}
+
+	sort.Slice(
+		transformed,
+		func(i, j int) bool {
+			return transformed[i].ID < transformed[j].ID
+		},
+	)
+
+	outputManifest := filepath.Join(
+		*outputDir,
+		"manifest.jsonl",
+	)
+
+	if err := corpus.WriteJSONL(
+		outputManifest,
+		transformed,
+	); err != nil {
+		return fmt.Errorf(
+			"write transformed manifest: %w",
+			err,
+		)
+	}
+
+	fmt.Fprintf(
+		stdout,
+		"transformed records: %d\n",
+		len(transformed),
+	)
+
+	fmt.Fprintf(
+		stdout,
+		"manifest: %s\n",
+		outputManifest,
 	)
 
 	return nil

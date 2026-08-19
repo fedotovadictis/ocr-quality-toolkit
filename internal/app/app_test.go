@@ -577,3 +577,136 @@ func TestRunCorpusValidateSuccess(t *testing.T) {
 		)
 	}
 }
+func TestRunCorpusStats(t *testing.T) {
+	dir := t.TempDir()
+
+	manifestPath := filepath.Join(dir, "manifest.jsonl")
+
+	records := []corpus.Record{
+		{
+			ID:         "real-001",
+			Image:      "images/real.jpg",
+			References: []string{"text"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+			Format:     "jpeg",
+		},
+		{
+			ID:         "synthetic-001",
+			ParentID:   "real-001",
+			Image:      "images/synthetic.png",
+			References: []string{"text"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+			Format:     "png",
+			Transform: corpus.Transform{
+				Name: "grayscale",
+			},
+		},
+	}
+
+	if err := corpus.WriteJSONL(manifestPath, records); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"corpus",
+			"stats",
+			"-manifest",
+			manifestPath,
+		},
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf(
+			"corpus stats failed: %v\nstderr: %s",
+			err,
+			stderr.String(),
+		)
+	}
+
+	output := stdout.String()
+
+	expected := []string{
+		"Records: 2",
+		"Real: 1",
+		"Synthetic: 1",
+		"ru: 2",
+		"jpeg: 1",
+		"png: 1",
+		"grayscale: 1",
+	}
+
+	for _, want := range expected {
+		if !strings.Contains(output, want) {
+			t.Fatalf(
+				"expected output to contain %q, got:\n%s",
+				want,
+				output,
+			)
+		}
+	}
+}
+func TestRunImageTransform(t *testing.T) {
+	dir := t.TempDir()
+
+	imageDir := filepath.Join(dir, "images")
+	if err := os.MkdirAll(imageDir, 0o755); err != nil {
+		t.Fatalf("create image dir: %v", err)
+	}
+
+	sourcePath := filepath.Join(imageDir, "page.png")
+
+	img := image.NewRGBA(image.Rect(0, 0, 20, 20))
+	if err := generator.SavePNG(sourcePath, img); err != nil {
+		t.Fatalf("save source image: %v", err)
+	}
+
+	manifestPath := filepath.Join(dir, "manifest.jsonl")
+	outputDir := filepath.Join(dir, "transformed")
+
+	records := []corpus.Record{
+		{
+			ID:         "page-001",
+			Image:      "images/page.png",
+			References: []string{"text"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+			Width:      20,
+			Height:     20,
+			Format:     "png",
+		},
+	}
+
+	if err := corpus.WriteJSONL(manifestPath, records); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"image",
+			"transform",
+			"-manifest", manifestPath,
+			"-profiles", "grayscale",
+			"-seed", "42",
+			"-out", outputDir,
+		},
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf(
+			"image transform failed: %v\nstderr: %s",
+			err,
+			stderr.String(),
+		)
+	}
+}
