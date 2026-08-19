@@ -48,37 +48,53 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestRunImportMWSMissingMetadata(t *testing.T) {
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-
-	err := Run([]string{"import-mws"}, &stdout, &stderr)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "missing required flag: -metadata") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestRunImportMWSMissingOutput(t *testing.T) {
+func TestRunCorpusImportMWSMissingSource(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
 	err := Run(
 		[]string{
+			"corpus",
 			"import-mws",
-			"-metadata", "metadata.jsonl",
 		},
 		&stdout,
 		&stderr,
 	)
+
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "missing required flag: -output") {
+	if !strings.Contains(
+		err.Error(),
+		"missing required flag: -source",
+	) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCorpusImportMWSMissingOutput(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"corpus",
+			"import-mws",
+			"-source", "testdata/mws",
+		},
+		&stdout,
+		&stderr,
+	)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"missing required flag: -out",
+	) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -652,6 +668,7 @@ func TestRunCorpusStats(t *testing.T) {
 		}
 	}
 }
+
 func TestRunImageTransform(t *testing.T) {
 	dir := t.TempDir()
 
@@ -663,6 +680,18 @@ func TestRunImageTransform(t *testing.T) {
 	sourcePath := filepath.Join(imageDir, "page.png")
 
 	img := image.NewRGBA(image.Rect(0, 0, 20, 20))
+
+	for y := 0; y < 20; y++ {
+		for x := 0; x < 20; x++ {
+			img.Set(x, y, color.RGBA{
+				R: uint8(x * 10),
+				G: uint8(y * 10),
+				B: 100,
+				A: 255,
+			})
+		}
+	}
+
 	if err := generator.SavePNG(sourcePath, img); err != nil {
 		t.Fatalf("save source image: %v", err)
 	}
@@ -674,11 +703,181 @@ func TestRunImageTransform(t *testing.T) {
 		{
 			ID:         "page-001",
 			Image:      "images/page.png",
-			References: []string{"text"},
+			References: []string{"Пример текста"},
 			Language:   "ru",
 			Task:       "full-page OCR ru",
 			Width:      20,
 			Height:     20,
+			Format:     "png",
+			Tags:       []string{"synthetic"},
+		},
+	}
+
+	if err := corpus.WriteJSONL(manifestPath, records); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"image",
+			"transform",
+			"-manifest", manifestPath,
+			"-profiles", "grayscale,noise-light",
+			"-seed", "42",
+			"-out", outputDir,
+		},
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf(
+			"image transform failed: %v\nstderr: %s",
+			err,
+			stderr.String(),
+		)
+	}
+
+	outputManifest := filepath.Join(
+		outputDir,
+		"manifest.jsonl",
+	)
+
+	got, err := corpus.ReadManifest(outputManifest)
+	if err != nil {
+		t.Fatalf("read transformed manifest: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf(
+			"expected 2 transformed records, got %d",
+			len(got),
+		)
+	}
+
+	expectedProfiles := []string{
+		"grayscale",
+		"noise-light",
+	}
+
+	for i, profile := range expectedProfiles {
+		record := got[i]
+
+		expectedID := "page-001__" + profile
+
+		if record.ID != expectedID {
+			t.Fatalf(
+				"expected id %q, got %q",
+				expectedID,
+				record.ID,
+			)
+		}
+
+		if record.ParentID != "page-001" {
+			t.Fatalf(
+				"unexpected parent_id: %q",
+				record.ParentID,
+			)
+		}
+
+		if record.Transform.Name != profile {
+			t.Fatalf(
+				"expected transform %q, got %q",
+				profile,
+				record.Transform.Name,
+			)
+		}
+
+		if record.Transform.Seed != "42" {
+			t.Fatalf(
+				"unexpected seed: %q",
+				record.Transform.Seed,
+			)
+		}
+
+		if record.Width != 20 {
+			t.Fatalf(
+				"unexpected width for %q: %d",
+				record.ID,
+				record.Width,
+			)
+		}
+
+		if record.Height != 20 {
+			t.Fatalf(
+				"unexpected height for %q: %d",
+				record.ID,
+				record.Height,
+			)
+		}
+
+		if record.Format != "png" {
+			t.Fatalf(
+				"unexpected format for %q: %q",
+				record.ID,
+				record.Format,
+			)
+		}
+
+		if record.SHA256 == "" {
+			t.Fatalf(
+				"empty SHA-256 for %q",
+				record.ID,
+			)
+		}
+
+		transformedPath := filepath.Join(
+			outputDir,
+			filepath.FromSlash(record.Image),
+		)
+
+		if _, err := os.Stat(transformedPath); err != nil {
+			t.Fatalf(
+				"transformed image %q not created: %v",
+				record.ID,
+				err,
+			)
+		}
+	}
+
+	if !strings.Contains(
+		stdout.String(),
+		"transformed records: 2",
+	) {
+		t.Fatalf(
+			"unexpected stdout:\n%s",
+			stdout.String(),
+		)
+	}
+}
+func TestRunImageTransformUnknownProfile(t *testing.T) {
+	dir := t.TempDir()
+
+	imageDir := filepath.Join(dir, "images")
+	if err := os.MkdirAll(imageDir, 0o755); err != nil {
+		t.Fatalf("create image dir: %v", err)
+	}
+
+	sourcePath := filepath.Join(imageDir, "page.png")
+
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	if err := generator.SavePNG(sourcePath, img); err != nil {
+		t.Fatalf("save source image: %v", err)
+	}
+
+	manifestPath := filepath.Join(dir, "manifest.jsonl")
+
+	records := []corpus.Record{
+		{
+			ID:         "page-001",
+			Image:      "images/page.png",
+			References: []string{"text"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+			Width:      10,
+			Height:     10,
 			Format:     "png",
 		},
 	}
@@ -695,18 +894,53 @@ func TestRunImageTransform(t *testing.T) {
 			"image",
 			"transform",
 			"-manifest", manifestPath,
-			"-profiles", "grayscale",
+			"-profiles", "unknown-profile",
 			"-seed", "42",
-			"-out", outputDir,
+			"-out", filepath.Join(dir, "out"),
 		},
 		&stdout,
 		&stderr,
 	)
-	if err != nil {
-		t.Fatalf(
-			"image transform failed: %v\nstderr: %s",
-			err,
-			stderr.String(),
-		)
+
+	if err == nil {
+		t.Fatal("expected unknown profile error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "unknown transform profile") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+func TestRunCorpusImportMWSUnsupportedTask(t *testing.T) {
+	dir := t.TempDir()
+
+	metadataPath := filepath.Join(dir, "metadata.jsonl")
+	if err := os.WriteFile(metadataPath, []byte(""), 0o600); err != nil {
+		t.Fatalf("write metadata: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"corpus",
+			"import-mws",
+			"-source", dir,
+			"-task", "reasoning VQA ru",
+			"-out", filepath.Join(dir, "manifest.jsonl"),
+		},
+		&stdout,
+		&stderr,
+	)
+
+	if err == nil {
+		t.Fatal("expected unsupported task error, got nil")
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"unsupported MWS task",
+	) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

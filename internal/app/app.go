@@ -71,53 +71,6 @@ func Run(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
-func runImportMWS(args []string, stdout, stderr io.Writer) error {
-	flags := flag.NewFlagSet("import-mws", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-
-	metadataPath := flags.String(
-		"metadata",
-		"",
-		"path to MWS metadata JSONL",
-	)
-
-	outputPath := flags.String(
-		"output",
-		"",
-		"path to output manifest JSONL",
-	)
-
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-
-	if *metadataPath == "" {
-		return errors.New("missing required flag: -metadata")
-	}
-
-	if *outputPath == "" {
-		return errors.New("missing required flag: -output")
-	}
-
-	records, stats, err := corpus.ImportMWSMetadata(*metadataPath)
-	if err != nil {
-		return fmt.Errorf("import MWS metadata: %w", err)
-	}
-
-	if err := corpus.WriteJSONL(*outputPath, records); err != nil {
-		return fmt.Errorf("write manifest: %w", err)
-	}
-
-	fmt.Fprintf(stdout, "total lines: %d\n", stats.TotalLines)
-	fmt.Fprintf(stdout, "matching tasks: %d\n", stats.MatchingTasks)
-	fmt.Fprintf(stdout, "imported: %d\n", stats.Imported)
-	fmt.Fprintf(stdout, "missing images: %d\n", stats.MissingImages)
-	fmt.Fprintf(stdout, "invalid images: %d\n", stats.InvalidImages)
-	fmt.Fprintf(stdout, "empty references: %d\n", stats.EmptyReferences)
-
-	return nil
-}
-
 func runEvaluate(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("evaluate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -1014,6 +967,85 @@ func runImageTransform(args []string, stdout, stderr io.Writer) error {
 		"manifest: %s\n",
 		outputManifest,
 	)
+
+	return nil
+}
+func runImportMWS(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("corpus import-mws", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+
+	sourcePath := flags.String(
+		"source",
+		"",
+		"path to MWS-Vision-Bench directory",
+	)
+
+	task := flags.String(
+		"task",
+		"full-page OCR ru",
+		"MWS task type",
+	)
+
+	outputPath := flags.String(
+		"out",
+		"",
+		"path to output manifest JSONL",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *sourcePath == "" {
+		return errors.New("missing required flag: -source")
+	}
+
+	if *outputPath == "" {
+		return errors.New("missing required flag: -out")
+	}
+
+	metadataPath := filepath.Join(
+		*sourcePath,
+		"metadata.jsonl",
+	)
+
+	if _, err := os.Stat(metadataPath); err != nil {
+		return fmt.Errorf(
+			"metadata file %q: %w",
+			metadataPath,
+			err,
+		)
+	}
+
+	if *task != "full-page OCR ru" {
+		return fmt.Errorf(
+			"unsupported MWS task %q",
+			*task,
+		)
+	}
+
+	records, stats, err := corpus.ImportMWSMetadata(metadataPath)
+	if err != nil {
+		return fmt.Errorf(
+			"import MWS metadata: %w",
+			err,
+		)
+	}
+
+	if err := corpus.WriteJSONL(*outputPath, records); err != nil {
+		return fmt.Errorf(
+			"write manifest: %w",
+			err,
+		)
+	}
+
+	fmt.Fprintf(stdout, "total lines: %d\n", stats.TotalLines)
+	fmt.Fprintf(stdout, "matching tasks: %d\n", stats.MatchingTasks)
+	fmt.Fprintf(stdout, "imported: %d\n", stats.Imported)
+	fmt.Fprintf(stdout, "missing images: %d\n", stats.MissingImages)
+	fmt.Fprintf(stdout, "invalid images: %d\n", stats.InvalidImages)
+	fmt.Fprintf(stdout, "empty references: %d\n", stats.EmptyReferences)
+	fmt.Fprintf(stdout, "manifest: %s\n", *outputPath)
 
 	return nil
 }
