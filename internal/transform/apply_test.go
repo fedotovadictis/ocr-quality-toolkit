@@ -74,3 +74,44 @@ func TestApplyUnknownProfile(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+func TestApplyClean(t *testing.T) {
+	source := image.NewRGBA(image.Rect(0, 0, 10, 10))
+
+	want := color.RGBA{
+		R: 10,
+		G: 20,
+		B: 30,
+		A: 255,
+	}
+
+	source.Set(3, 4, want)
+
+	got, err := Apply(
+		source,
+		"clean",
+		42,
+	)
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	if got.Bounds() != source.Bounds() {
+		t.Fatalf(
+			"unexpected bounds: got %v, want %v",
+			got.Bounds(),
+			source.Bounds(),
+		)
+	}
+
+	gotPixel := color.RGBAModel.Convert(
+		got.At(3, 4),
+	).(color.RGBA)
+
+	if gotPixel != want {
+		t.Fatalf(
+			"unexpected pixel: got %#v, want %#v",
+			gotPixel,
+			want,
+		)
+	}
+}

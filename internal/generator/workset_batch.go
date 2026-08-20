@@ -20,7 +20,15 @@ func BuildSyntheticWorkset(
 ) ([]corpus.Record, error) {
 	records := make([]corpus.Record, 0, len(parents))
 
+	globalSeed := strconv.FormatInt(seed, 10)
+
 	for _, parent := range parents {
+		recordSeed := DeriveSeed(
+			globalSeed,
+			parent.ID,
+			profile,
+		)
+
 		sourcePath := filepath.Join(
 			root,
 			filepath.FromSlash(parent.Image),
@@ -44,7 +52,7 @@ func BuildSyntheticWorkset(
 			sourcePath,
 			targetPath,
 			profile,
-			seed,
+			recordSeed,
 		); err != nil {
 			return nil, fmt.Errorf(
 				"build synthetic image for %q: %w",
@@ -57,7 +65,7 @@ func BuildSyntheticWorkset(
 			parent,
 			imagePath,
 			profile,
-			strconv.FormatInt(seed, 10),
+			strconv.FormatInt(recordSeed, 10),
 		)
 		if err != nil {
 			return nil, fmt.Errorf(

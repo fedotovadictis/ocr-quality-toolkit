@@ -65,6 +65,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 
 	case "transform":
 		return runImageTransform(args[1:], stdout, stderr)
+	case "generate":
+		return runCorpusGenerate(args[1:], stdout, stderr)
 
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -535,13 +537,16 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 func runCorpus(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(
-			"usage: ocrq corpus <import-mws|validate|stats> [options]",
+			"usage: ocrq corpus <import-mws|generate|validate|stats> [options]",
 		)
 	}
 
 	switch args[0] {
 	case "import-mws":
 		return runImportMWS(args[1:], stdout, stderr)
+
+	case "generate":
+		return runCorpusGenerate(args[1:], stdout, stderr)
 
 	case "validate":
 		return runCorpusValidate(args[1:], stdout, stderr)
@@ -1048,4 +1053,156 @@ func runImportMWS(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "manifest: %s\n", *outputPath)
 
 	return nil
+}
+func runCorpusGenerate(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet(
+		"corpus generate",
+		flag.ContinueOnError,
+	)
+	flags.SetOutput(stderr)
+
+	textsPath := flags.String(
+		"texts",
+		"",
+		"path to input texts JSONL",
+	)
+
+	fontDir := flags.String(
+		"font-dir",
+		"",
+		"path to directory with TTF fonts",
+	)
+
+	pages := flags.Int(
+		"pages",
+		0,
+		"number of pages to generate",
+	)
+
+	seedValue := flags.String(
+		"seed",
+		"",
+		"deterministic generation seed",
+	)
+
+	outputDir := flags.String(
+		"out",
+		"",
+		"path to output corpus directory",
+	)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *textsPath == "" {
+		return errors.New("missing required flag: -texts")
+	}
+
+	if *fontDir == "" {
+		return errors.New("missing required flag: -font-dir")
+	}
+
+	if *seedValue == "" {
+		return errors.New("missing required flag: -seed")
+	}
+
+	if *outputDir == "" {
+		return errors.New("missing required flag: -out")
+	}
+
+	if *pages < 0 {
+		return errors.New("pages must not be negative")
+	}
+
+	seed, err := strconv.ParseInt(*seedValue, 10, 64)
+	if err != nil {
+		return fmt.Errorf(
+			"invalid seed %q: %w",
+			*seedValue,
+			err,
+		)
+	}
+
+	inputs, err := generator.ReadTextInputs(*textsPath)
+	if err != nil {
+		return fmt.Errorf("read texts: %w", err)
+	}
+
+	fontPath, err := findFirstTTF(*fontDir)
+	if err != nil {
+		return err
+	}
+
+	options := generator.PageOptions{
+		Width:      1200,
+		Height:     1600,
+		Margin:     80,
+		FontPath:   fontPath,
+		FontSize:   32,
+		LineHeight: 44,
+		Seed:       seed,
+	}
+
+	records, err := generator.GenerateCorpus(
+		inputs,
+		options,
+		*pages,
+		*outputDir,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"generate corpus: %w",
+			err,
+		)
+	}
+
+	fmt.Fprintf(stdout, "generated records: %d\n", len(records))
+	fmt.Fprintf(
+		stdout,
+		"manifest: %s\n",
+		filepath.Join(*outputDir, "manifest.jsonl"),
+	)
+
+	return nil
+}
+
+func findFirstTTF(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf(
+			"read font directory %q: %w",
+			dir,
+			err,
+		)
+	}
+
+	var fonts []string
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		if strings.EqualFold(
+			filepath.Ext(entry.Name()),
+			".ttf",
+		) {
+			fonts = append(
+				fonts,
+				filepath.Join(dir, entry.Name()),
+			)
+		}
+	}
+
+	if len(fonts) == 0 {
+		return "", fmt.Errorf(
+			"no TTF fonts found in %q",
+			dir,
+		)
+	}
+
+	sort.Strings(fonts)
+
+	return fonts[0], nil
 }

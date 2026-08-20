@@ -12,6 +12,9 @@ func Apply(
 	seed int64,
 ) (image.Image, error) {
 	switch profile {
+	case "clean":
+		return source, nil
+
 	case "grayscale":
 		return Grayscale(source), nil
 

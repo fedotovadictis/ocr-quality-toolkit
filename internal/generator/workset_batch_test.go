@@ -107,3 +107,112 @@ func TestBuildSyntheticWorkset(t *testing.T) {
 		t.Fatalf("synthetic image not created: %v", err)
 	}
 }
+func TestBuildSyntheticWorksetUsesPerRecordSeed(t *testing.T) {
+	root := t.TempDir()
+
+	if err := os.MkdirAll(
+		filepath.Join(root, "real"),
+		0o755,
+	); err != nil {
+		t.Fatalf("create real dir: %v", err)
+	}
+
+	if err := os.MkdirAll(
+		filepath.Join(root, "synthetic"),
+		0o755,
+	); err != nil {
+		t.Fatalf("create synthetic dir: %v", err)
+	}
+
+	createSource := func(name string) {
+		t.Helper()
+
+		path := filepath.Join(root, "real", name)
+
+		img := image.NewRGBA(image.Rect(0, 0, 20, 20))
+
+		for y := 0; y < 20; y++ {
+			for x := 0; x < 20; x++ {
+				img.Set(x, y, color.RGBA{
+					R: uint8(x * 10),
+					G: uint8(y * 10),
+					B: 100,
+					A: 255,
+				})
+			}
+		}
+
+		if err := SavePNG(path, img); err != nil {
+			t.Fatalf("save source %q: %v", name, err)
+		}
+	}
+
+	createSource("page-001.png")
+	createSource("page-002.png")
+
+	parents := []corpus.Record{
+		{
+			ID:         "page-001",
+			Image:      "real/page-001.png",
+			References: []string{"first"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+		},
+		{
+			ID:         "page-002",
+			Image:      "real/page-002.png",
+			References: []string{"second"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+		},
+	}
+
+	first, err := BuildSyntheticWorkset(
+		root,
+		parents,
+		"noise-light",
+		42,
+	)
+	if err != nil {
+		t.Fatalf("first BuildSyntheticWorkset: %v", err)
+	}
+
+	if len(first) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(first))
+	}
+
+	if first[0].Transform.Seed == first[1].Transform.Seed {
+		t.Fatalf(
+			"expected different per-record seeds, got %q",
+			first[0].Transform.Seed,
+		)
+	}
+
+	second, err := BuildSyntheticWorkset(
+		root,
+		parents,
+		"noise-light",
+		42,
+	)
+	if err != nil {
+		t.Fatalf("second BuildSyntheticWorkset: %v", err)
+	}
+
+	for i := range first {
+		if first[i].Transform.Seed != second[i].Transform.Seed {
+			t.Fatalf(
+				"seed changed between runs for %q: %q != %q",
+				first[i].ID,
+				first[i].Transform.Seed,
+				second[i].Transform.Seed,
+			)
+		}
+
+		if first[i].SHA256 != second[i].SHA256 {
+			t.Fatalf(
+				"SHA-256 changed between runs for %q",
+				first[i].ID,
+			)
+		}
+	}
+}

@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 func TestRunNoArguments(t *testing.T) {
@@ -942,5 +944,145 @@ func TestRunCorpusImportMWSUnsupportedTask(t *testing.T) {
 		"unsupported MWS task",
 	) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+func TestRunCorpusGenerate(t *testing.T) {
+	dir := t.TempDir()
+
+	textsPath := filepath.Join(dir, "texts.jsonl")
+	fontDir := filepath.Join(dir, "fonts")
+	outputDir := filepath.Join(dir, "synthetic")
+
+	if err := os.MkdirAll(fontDir, 0o755); err != nil {
+		t.Fatalf("create font dir: %v", err)
+	}
+
+	fontPath := filepath.Join(fontDir, "regular.ttf")
+	if err := os.WriteFile(fontPath, goregular.TTF, 0o600); err != nil {
+		t.Fatalf("write font: %v", err)
+	}
+
+	texts := `{"id":"text-002","text":"Hello OCR"}
+{"id":"text-001","text":"Счёт № 12345"}
+`
+
+	if err := os.WriteFile(textsPath, []byte(texts), 0o600); err != nil {
+		t.Fatalf("write texts: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run(
+		[]string{
+			"corpus",
+			"generate",
+			"-texts", textsPath,
+			"-font-dir", fontDir,
+			"-pages", "1",
+			"-seed", "42",
+			"-out", outputDir,
+		},
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf(
+			"corpus generate failed: %v\nstderr: %s",
+			err,
+			stderr.String(),
+		)
+	}
+
+	manifestPath := filepath.Join(
+		outputDir,
+		"manifest.jsonl",
+	)
+
+	records, err := corpus.ReadManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("read generated manifest: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf(
+			"expected 1 generated record, got %d",
+			len(records),
+		)
+	}
+
+	record := records[0]
+
+	if record.ID == "" {
+		t.Fatal("expected generated id")
+	}
+
+	if len(record.References) != 1 {
+		t.Fatalf(
+			"unexpected references: %#v",
+			record.References,
+		)
+	}
+
+	if record.References[0] != "Счёт № 12345" {
+		t.Fatalf(
+			"unexpected reference: %q",
+			record.References[0],
+		)
+	}
+
+	if record.Width != 1200 {
+		t.Fatalf(
+			"unexpected width: %d",
+			record.Width,
+		)
+	}
+
+	if record.Height != 1600 {
+		t.Fatalf(
+			"unexpected height: %d",
+			record.Height,
+		)
+	}
+
+	if record.Format != "png" {
+		t.Fatalf(
+			"unexpected format: %q",
+			record.Format,
+		)
+	}
+
+	if record.SHA256 == "" {
+		t.Fatal("expected SHA-256")
+	}
+
+	if len(record.Tags) != 1 ||
+		record.Tags[0] != "synthetic" {
+		t.Fatalf(
+			"unexpected tags: %#v",
+			record.Tags,
+		)
+	}
+
+	imagePath := filepath.Join(
+		outputDir,
+		filepath.FromSlash(record.Image),
+	)
+
+	if _, err := os.Stat(imagePath); err != nil {
+		t.Fatalf(
+			"generated image not found: %v",
+			err,
+		)
+	}
+
+	if !strings.Contains(
+		stdout.String(),
+		"generated records: 1",
+	) {
+		t.Fatalf(
+			"unexpected stdout:\n%s",
+			stdout.String(),
+		)
 	}
 }

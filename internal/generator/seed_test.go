@@ -30,3 +30,60 @@ func TestNewRandomSourceDifferentSeed(t *testing.T) {
 		t.Fatal("different seeds must produce different sequences")
 	}
 }
+func TestDeriveSeedStable(t *testing.T) {
+	first := DeriveSeed(
+		"internship-2026",
+		"page-001",
+		"noise-light",
+	)
+
+	second := DeriveSeed(
+		"internship-2026",
+		"page-001",
+		"noise-light",
+	)
+
+	if first != second {
+		t.Fatalf(
+			"expected stable seed, got %d and %d",
+			first,
+			second,
+		)
+	}
+}
+
+func TestDeriveSeedDiffersByRecord(t *testing.T) {
+	first := DeriveSeed(
+		"internship-2026",
+		"page-001",
+		"noise-light",
+	)
+
+	second := DeriveSeed(
+		"internship-2026",
+		"page-002",
+		"noise-light",
+	)
+
+	if first == second {
+		t.Fatal("expected different seeds for different records")
+	}
+}
+
+func TestDeriveSeedDiffersByTransform(t *testing.T) {
+	first := DeriveSeed(
+		"internship-2026",
+		"page-001",
+		"noise-light",
+	)
+
+	second := DeriveSeed(
+		"internship-2026",
+		"page-001",
+		"grayscale",
+	)
+
+	if first == second {
+		t.Fatal("expected different seeds for different transforms")
+	}
+}
