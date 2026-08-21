@@ -828,15 +828,6 @@ func runImageTransform(args []string, stdout, stderr io.Writer) error {
 		return errors.New("missing required flag: -out")
 	}
 
-	seed, err := strconv.ParseInt(*seedValue, 10, 64)
-	if err != nil {
-		return fmt.Errorf(
-			"invalid seed %q: %w",
-			*seedValue,
-			err,
-		)
-	}
-
 	records, err := corpus.ReadManifest(*manifestPath)
 	if err != nil {
 		return fmt.Errorf("read manifest: %w", err)
@@ -869,6 +860,11 @@ func runImageTransform(args []string, stdout, stderr io.Writer) error {
 				sourceRoot,
 				filepath.FromSlash(parent.Image),
 			)
+			recordSeed := generator.DeriveSeed(
+				*seedValue,
+				parent.ID,
+				profile,
+			)
 
 			id := parent.ID + "__" + profile
 
@@ -888,7 +884,7 @@ func runImageTransform(args []string, stdout, stderr io.Writer) error {
 				sourcePath,
 				targetPath,
 				profile,
-				seed,
+				recordSeed,
 			); err != nil {
 				return fmt.Errorf(
 					"transform record %q with profile %q: %w",
@@ -902,7 +898,7 @@ func runImageTransform(args []string, stdout, stderr io.Writer) error {
 				parent,
 				imagePath,
 				profile,
-				*seedValue,
+				strconv.FormatInt(recordSeed, 10),
 			)
 			if err != nil {
 				return fmt.Errorf(
@@ -1115,15 +1111,6 @@ func runCorpusGenerate(args []string, stdout, stderr io.Writer) error {
 		return errors.New("pages must not be negative")
 	}
 
-	seed, err := strconv.ParseInt(*seedValue, 10, 64)
-	if err != nil {
-		return fmt.Errorf(
-			"invalid seed %q: %w",
-			*seedValue,
-			err,
-		)
-	}
-
 	inputs, err := generator.ReadTextInputs(*textsPath)
 	if err != nil {
 		return fmt.Errorf("read texts: %w", err)
@@ -1132,6 +1119,14 @@ func runCorpusGenerate(args []string, stdout, stderr io.Writer) error {
 	fontPath, err := findFirstTTF(*fontDir)
 	if err != nil {
 		return err
+	}
+	seed, err := strconv.ParseInt(*seedValue, 10, 64)
+	if err != nil {
+		return fmt.Errorf(
+			"invalid seed %q: %w",
+			*seedValue,
+			err,
+		)
 	}
 
 	options := generator.PageOptions{

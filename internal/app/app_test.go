@@ -16,6 +16,7 @@ import (
 	"ocr-quality-toolkit/internal/runner"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -792,10 +793,20 @@ func TestRunImageTransform(t *testing.T) {
 			)
 		}
 
-		if record.Transform.Seed != "42" {
+		expectedSeed := strconv.FormatInt(
+			generator.DeriveSeed(
+				"42",
+				"page-001",
+				profile,
+			),
+			10,
+		)
+
+		if record.Transform.Seed != expectedSeed {
 			t.Fatalf(
-				"unexpected seed: %q",
+				"unexpected seed: got %q, want %q",
 				record.Transform.Seed,
+				expectedSeed,
 			)
 		}
 
@@ -1083,6 +1094,110 @@ func TestRunCorpusGenerate(t *testing.T) {
 		t.Fatalf(
 			"unexpected stdout:\n%s",
 			stdout.String(),
+		)
+	}
+}
+func TestRunImageTransformDeterministic(t *testing.T) {
+	dir := t.TempDir()
+
+	imageDir := filepath.Join(dir, "images")
+	if err := os.MkdirAll(imageDir, 0o755); err != nil {
+		t.Fatalf("create image dir: %v", err)
+	}
+
+	sourcePath := filepath.Join(imageDir, "page.png")
+
+	img := image.NewRGBA(image.Rect(0, 0, 20, 20))
+	for y := 0; y < 20; y++ {
+		for x := 0; x < 20; x++ {
+			img.Set(x, y, color.RGBA{
+				R: uint8(x * 10),
+				G: uint8(y * 10),
+				B: 100,
+				A: 255,
+			})
+		}
+	}
+
+	if err := generator.SavePNG(sourcePath, img); err != nil {
+		t.Fatalf("save source image: %v", err)
+	}
+
+	manifestPath := filepath.Join(dir, "manifest.jsonl")
+
+	records := []corpus.Record{
+		{
+			ID:         "page-001",
+			Image:      "images/page.png",
+			References: []string{"text"},
+			Language:   "ru",
+			Task:       "full-page OCR ru",
+			Width:      20,
+			Height:     20,
+			Format:     "png",
+		},
+	}
+
+	if err := corpus.WriteJSONL(manifestPath, records); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	run := func(outputDir string) []corpus.Record {
+		t.Helper()
+
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+
+		err := Run(
+			[]string{
+				"image",
+				"transform",
+				"-manifest", manifestPath,
+				"-profiles", "noise-light",
+				"-seed", "internship-2026",
+				"-out", outputDir,
+			},
+			&stdout,
+			&stderr,
+		)
+		if err != nil {
+			t.Fatalf(
+				"image transform failed: %v\nstderr: %s",
+				err,
+				stderr.String(),
+			)
+		}
+
+		got, err := corpus.ReadManifest(
+			filepath.Join(outputDir, "manifest.jsonl"),
+		)
+		if err != nil {
+			t.Fatalf("read manifest: %v", err)
+		}
+
+		return got
+	}
+
+	first := run(filepath.Join(dir, "first"))
+	second := run(filepath.Join(dir, "second"))
+
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf("unexpected record counts")
+	}
+
+	if first[0].Transform.Seed != second[0].Transform.Seed {
+		t.Fatalf(
+			"seed changed: %q != %q",
+			first[0].Transform.Seed,
+			second[0].Transform.Seed,
+		)
+	}
+
+	if first[0].SHA256 != second[0].SHA256 {
+		t.Fatalf(
+			"SHA-256 changed: %q != %q",
+			first[0].SHA256,
+			second[0].SHA256,
 		)
 	}
 }
