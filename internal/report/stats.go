@@ -49,6 +49,7 @@ func CalculateStats(results []runner.Result) Stats {
 type EvaluationStats struct {
 	Total               int     `json:"total"`
 	Successful          int     `json:"successful"`
+	EngineErrors        int     `json:"engine_errors"`
 	Missing             int     `json:"missing"`
 	Coverage            float64 `json:"coverage"`
 	ReferenceCharacters int     `json:"reference_characters"`
@@ -67,23 +68,30 @@ func CalculateEvaluationStats(
 	}
 
 	for _, result := range results {
-		stats.ReferenceCharacters += result.ReferenceCharacters
-
-		stats.CharacterErrors +=
-			result.CharacterSubstitutions +
-				result.CharacterDeletions +
-				result.CharacterInsertions
-
-		stats.ReferenceWords += result.ReferenceWords
-
-		stats.WordErrors +=
-			result.WordSubstitutions +
-				result.WordDeletions +
-				result.WordInsertions
-
-		if result.Status != evaluate.StatusMissingHypothesis {
+		switch result.Status {
+		case evaluate.StatusSuccess:
 			stats.Successful++
-		} else {
+
+			stats.ReferenceCharacters +=
+				result.ReferenceCharacters
+
+			stats.CharacterErrors +=
+				result.CharacterSubstitutions +
+					result.CharacterDeletions +
+					result.CharacterInsertions
+
+			stats.ReferenceWords +=
+				result.ReferenceWords
+
+			stats.WordErrors +=
+				result.WordSubstitutions +
+					result.WordDeletions +
+					result.WordInsertions
+
+		case evaluate.StatusEngineError:
+			stats.EngineErrors++
+
+		case evaluate.StatusMissingHypothesis:
 			stats.Missing++
 		}
 	}
@@ -108,6 +116,7 @@ func CalculateEvaluationStats(
 
 	return stats
 }
+
 func GroupByLanguage(
 	records []corpus.Record,
 	results []evaluate.Result,
@@ -120,6 +129,7 @@ func GroupByLanguage(
 		},
 	)
 }
+
 func GroupByTask(
 	records []corpus.Record,
 	results []evaluate.Result,
@@ -145,18 +155,37 @@ func GroupByTags(
 		},
 	)
 }
+
+func GroupByTransform(
+	records []corpus.Record,
+	results []evaluate.Result,
+) map[string]EvaluationStats {
+	return groupBy(
+		records,
+		results,
+		func(record corpus.Record) []string {
+			return []string{record.Transform.Name}
+		},
+	)
+}
+
 func groupBy(
 	records []corpus.Record,
 	results []evaluate.Result,
 	keyFn func(corpus.Record) []string,
 ) map[string]EvaluationStats {
-	resultByID := make(map[string]evaluate.Result, len(results))
+	resultByID := make(
+		map[string]evaluate.Result,
+		len(results),
+	)
 
 	for _, result := range results {
 		resultByID[result.ID] = result
 	}
 
-	groupedResults := make(map[string][]evaluate.Result)
+	groupedResults := make(
+		map[string][]evaluate.Result,
+	)
 
 	for _, record := range records {
 		result, ok := resultByID[record.ID]
@@ -176,23 +205,15 @@ func groupBy(
 		}
 	}
 
-	groups := make(map[string]EvaluationStats, len(groupedResults))
+	groups := make(
+		map[string]EvaluationStats,
+		len(groupedResults),
+	)
 
 	for key, groupResults := range groupedResults {
-		groups[key] = CalculateEvaluationStats(groupResults)
+		groups[key] =
+			CalculateEvaluationStats(groupResults)
 	}
 
 	return groups
-}
-func GroupByTransform(
-	records []corpus.Record,
-	results []evaluate.Result,
-) map[string]EvaluationStats {
-	return groupBy(
-		records,
-		results,
-		func(record corpus.Record) []string {
-			return []string{record.Transform.Name}
-		},
-	)
 }

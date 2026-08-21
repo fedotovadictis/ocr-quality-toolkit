@@ -205,7 +205,8 @@ func TestBuildReportPartialResults(t *testing.T) {
 		},
 		{
 			ID:     "2",
-			Status: evaluate.StatusOCRError,
+			Status: evaluate.StatusEngineError,
+			Error:  "process timeout",
 		},
 		{
 			ID:     "3",
@@ -222,10 +223,17 @@ func TestBuildReportPartialResults(t *testing.T) {
 		)
 	}
 
-	if report.Overall.Successful != 2 {
+	if report.Overall.Successful != 1 {
 		t.Fatalf(
-			"expected 2 covered results, got %d",
+			"expected 1 successful result, got %d",
 			report.Overall.Successful,
+		)
+	}
+
+	if report.Overall.EngineErrors != 1 {
+		t.Fatalf(
+			"expected 1 engine error, got %d",
+			report.Overall.EngineErrors,
 		)
 	}
 
@@ -236,7 +244,7 @@ func TestBuildReportPartialResults(t *testing.T) {
 		)
 	}
 
-	expectedCoverage := float64(2) / float64(3)
+	expectedCoverage := float64(1) / float64(3)
 
 	if report.Overall.Coverage != expectedCoverage {
 		t.Fatalf(

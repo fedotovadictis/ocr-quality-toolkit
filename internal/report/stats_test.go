@@ -112,7 +112,7 @@ func TestCalculateEvaluationStats(t *testing.T) {
 		},
 		{
 			ID:                     "2",
-			Status:                 evaluate.StatusOCRError,
+			Status:                 evaluate.StatusEngineError,
 			ReferenceCharacters:    20,
 			CharacterSubstitutions: 2,
 			CharacterDeletions:     0,
@@ -134,10 +134,16 @@ func TestCalculateEvaluationStats(t *testing.T) {
 		t.Fatalf("expected total 3, got %d", stats.Total)
 	}
 
-	if stats.Successful != 2 {
+	if stats.Successful != 1 {
 		t.Fatalf(
-			"expected 2 successful, got %d",
+			"expected 1 successful, got %d",
 			stats.Successful,
+		)
+	}
+	if stats.EngineErrors != 1 {
+		t.Fatalf(
+			"expected 1 engine error, got %d",
+			stats.EngineErrors,
 		)
 	}
 
@@ -148,7 +154,8 @@ func TestCalculateEvaluationStats(t *testing.T) {
 		)
 	}
 
-	expectedCER := float64(5) / float64(30)
+	expectedCER := float64(2) / float64(10)
+
 	if stats.CER != expectedCER {
 		t.Fatalf(
 			"expected CER %v, got %v",
@@ -157,7 +164,8 @@ func TestCalculateEvaluationStats(t *testing.T) {
 		)
 	}
 
-	expectedWER := float64(3) / float64(10)
+	expectedWER := float64(1) / float64(4)
+
 	if stats.WER != expectedWER {
 		t.Fatalf(
 			"expected WER %v, got %v",
@@ -166,7 +174,7 @@ func TestCalculateEvaluationStats(t *testing.T) {
 		)
 	}
 
-	expectedCoverage := float64(2) / float64(3)
+	expectedCoverage := float64(1) / float64(3)
 	if stats.Coverage != expectedCoverage {
 		t.Fatalf(
 			"expected coverage %v, got %v",
@@ -461,6 +469,62 @@ func TestGroupStatsByTransform(t *testing.T) {
 		t.Fatalf(
 			"expected jpeg-70 CER 0.2, got %v",
 			jpeg.CER,
+		)
+	}
+}
+func TestCalculateEvaluationStatsCoverageWithEngineError(t *testing.T) {
+	results := []evaluate.Result{
+		{
+			ID:                  "1",
+			Status:              evaluate.StatusSuccess,
+			ReferenceCharacters: 10,
+			ReferenceWords:      2,
+		},
+		{
+			ID:     "2",
+			Status: evaluate.StatusEngineError,
+			Error:  "process timeout",
+		},
+		{
+			ID:     "3",
+			Status: evaluate.StatusMissingHypothesis,
+		},
+	}
+
+	stats := CalculateEvaluationStats(results)
+
+	if stats.Total != 3 {
+		t.Fatalf("expected total 3, got %d", stats.Total)
+	}
+
+	if stats.Successful != 1 {
+		t.Fatalf(
+			"expected successful 1, got %d",
+			stats.Successful,
+		)
+	}
+
+	if stats.EngineErrors != 1 {
+		t.Fatalf(
+			"expected engine errors 1, got %d",
+			stats.EngineErrors,
+		)
+	}
+
+	if stats.Missing != 1 {
+		t.Fatalf(
+			"expected missing 1, got %d",
+			stats.Missing,
+		)
+	}
+
+	expectedCoverage := float64(1) / float64(3)
+
+	if stats.Coverage != expectedCoverage {
+		t.Fatalf(
+			"expected coverage %v, got %v",
+			expectedCoverage,
+			stats.Coverage,
 		)
 	}
 }

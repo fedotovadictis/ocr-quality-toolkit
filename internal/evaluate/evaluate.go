@@ -16,6 +16,7 @@ type Result struct {
 	Similarity float64 `json:"similarity"`
 	ExactMatch bool    `json:"exact_match"`
 	Status     Status  `json:"status"`
+	Error      string  `json:"error,omitempty"`
 
 	ReferenceCharacters    int `json:"reference_characters"`
 	CharacterHits          int `json:"character_hits"`
@@ -29,9 +30,13 @@ type Result struct {
 	WordDeletions     int `json:"word_deletions"`
 	WordInsertions    int `json:"word_insertions"`
 
-	Reference  string `json:"reference"`
-	Hypothesis string `json:"hypothesis"`
-	Image      string `json:"image"`
+	Reference            string              `json:"reference"`
+	Hypothesis           string              `json:"hypothesis"`
+	NormalizedReference  string              `json:"normalized_reference"`
+	NormalizedHypothesis string              `json:"normalized_hypothesis"`
+	SelectedReference    int                 `json:"selected_reference"`
+	Image                string              `json:"image"`
+	Alignment            []metrics.Operation `json:"alignment"`
 }
 
 func Evaluate(
@@ -68,16 +73,18 @@ func Evaluate(
 	results := make([]Result, 0, len(records))
 
 	for _, record := range records {
-		var hypothesisText string
+		var matchedHypothesis corpus.Hypothesis
 		hypothesisFound := false
 
 		result := Result{
-			ID: record.ID,
+			ID:                record.ID,
+			Image:             record.Image,
+			SelectedReference: -1,
 		}
 
 		for _, hypothesis := range hypotheses {
 			if hypothesis.ID == record.ID {
-				hypothesisText = hypothesis.Text
+				matchedHypothesis = hypothesis
 				hypothesisFound = true
 				break
 			}
@@ -89,15 +96,23 @@ func Evaluate(
 			continue
 		}
 
-		reference, err := chooseBestReference(
-			record.References,
-			hypothesisText,
-			profile,
-		)
-		result.Reference = reference
-		result.Hypothesis = hypothesisText
-		result.Image = record.Image
+		if matchedHypothesis.Error != "" {
+			result.Status = StatusEngineError
+			result.Error = matchedHypothesis.Error
+			result.Hypothesis = matchedHypothesis.Text
 
+			results = append(results, result)
+			continue
+		}
+
+		hypothesisText := matchedHypothesis.Text
+
+		rawReference, normalizedReference, selectedIndex, err :=
+			chooseBestReference(
+				record.References,
+				hypothesisText,
+				profile,
+			)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"evaluate record %q: %w",
@@ -106,22 +121,46 @@ func Evaluate(
 			)
 		}
 
-		hypothesis, err := normalize.Normalize(
+		result.Reference = rawReference
+		result.Hypothesis = hypothesisText
+		result.NormalizedReference = normalizedReference
+		result.SelectedReference = selectedIndex
+
+		normalizedHypothesis, err := normalize.Normalize(
 			hypothesisText,
 			profile,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf(
+				"normalize hypothesis for record %q: %w",
+				record.ID,
+				err,
+			)
 		}
 
-		result.CER = metrics.CER(reference, hypothesis)
-		result.WER = metrics.WER(reference, hypothesis)
-		referenceSymbols := stringSymbols(reference)
-		hypothesisSymbols := stringSymbols(hypothesis)
+		result.NormalizedHypothesis = normalizedHypothesis
+
+		result.CER = metrics.CER(
+			normalizedReference,
+			normalizedHypothesis,
+		)
+
+		result.WER = metrics.WER(
+			normalizedReference,
+			normalizedHypothesis,
+		)
+
+		referenceSymbols := stringSymbols(normalizedReference)
+		hypothesisSymbols := stringSymbols(normalizedHypothesis)
 
 		characterAlignment := metrics.Align(
 			referenceSymbols,
 			hypothesisSymbols,
+		)
+
+		result.Alignment = append(
+			[]metrics.Operation(nil),
+			characterAlignment.Operations...,
 		)
 
 		result.ReferenceCharacters = len(referenceSymbols)
@@ -130,8 +169,8 @@ func Evaluate(
 		result.CharacterDeletions = characterAlignment.Deletions
 		result.CharacterInsertions = characterAlignment.Insertions
 
-		referenceWords := strings.Fields(reference)
-		hypothesisWords := strings.Fields(hypothesis)
+		referenceWords := strings.Fields(normalizedReference)
+		hypothesisWords := strings.Fields(normalizedHypothesis)
 
 		wordAlignment := metrics.Align(
 			referenceWords,
@@ -149,13 +188,10 @@ func Evaluate(
 			hypothesisSymbols,
 		)
 
-		result.ExactMatch = reference == hypothesis
+		result.ExactMatch =
+			normalizedReference == normalizedHypothesis
 
-		if result.ExactMatch {
-			result.Status = StatusSuccess
-		} else {
-			result.Status = StatusOCRError
-		}
+		result.Status = StatusSuccess
 
 		results = append(results, result)
 	}
@@ -167,9 +203,14 @@ func chooseBestReference(
 	references []string,
 	hypothesis string,
 	profile normalize.Profile,
-) (string, error) {
+) (
+	rawReference string,
+	normalizedReference string,
+	selectedIndex int,
+	err error,
+) {
 	if len(references) == 0 {
-		return "", fmt.Errorf("no references provided")
+		return "", "", -1, fmt.Errorf("no references provided")
 	}
 
 	normalizedHypothesis, err := normalize.Normalize(
@@ -177,33 +218,37 @@ func chooseBestReference(
 		profile,
 	)
 	if err != nil {
-		return "", err
+		return "", "", -1, err
 	}
 
-	var bestReference string
 	bestCER := -1.0
+	bestIndex := -1
+	bestRaw := ""
+	bestNormalized := ""
 
-	for _, reference := range references {
-		normalizedReference, err := normalize.Normalize(
+	for index, reference := range references {
+		normalized, err := normalize.Normalize(
 			reference,
 			profile,
 		)
 		if err != nil {
-			return "", err
+			return "", "", -1, err
 		}
 
 		currentCER := metrics.CER(
-			normalizedReference,
+			normalized,
 			normalizedHypothesis,
 		)
 
 		if bestCER < 0 || currentCER < bestCER {
-			bestReference = normalizedReference
 			bestCER = currentCER
+			bestIndex = index
+			bestRaw = reference
+			bestNormalized = normalized
 		}
 	}
 
-	return bestReference, nil
+	return bestRaw, bestNormalized, bestIndex, nil
 }
 
 func stringSymbols(text string) []string {

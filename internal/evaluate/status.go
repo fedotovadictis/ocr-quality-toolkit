@@ -4,6 +4,6 @@ type Status string
 
 const (
 	StatusSuccess           Status = "success"
-	StatusOCRError          Status = "ocr_error"
+	StatusEngineError       Status = "engine_error"
 	StatusMissingHypothesis Status = "missing_hypothesis"
 )
